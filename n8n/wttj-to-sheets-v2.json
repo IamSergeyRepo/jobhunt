@@ -1,0 +1,137 @@
+{
+  "name": "WTTJ Job Alerts → Google Sheets v2",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 5,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "filters": {
+          "sender": "help@welcometothejungle.com"
+        },
+        "options": {
+          "downloadAttachments": false
+        }
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger - WTTJ Alerts",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail OAuth2 — configure in n8n UI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{ $json.id }}",
+        "simple": false,
+        "options": {}
+      },
+      "id": "gmail-get-message",
+      "name": "Get Full Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [450, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail OAuth2 — configure in n8n UI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse WTTJ alert email HTML and extract job listings\n// Then auto-tag by location: Remote or DMV area → \"Relevant\", otherwise → \"Skip\"\nconst items = [];\n\n// DMV area keywords (DC, Maryland, Virginia metro area)\nconst DMV_KEYWORDS = [\n  'washington', 'dc', 'd.c.', 'district of columbia',\n  'maryland', 'virginia',\n  'arlington', 'alexandria', 'fairfax', 'reston', 'tysons',\n  'mclean', 'herndon', 'sterling', 'ashburn', 'leesburg',\n  'bethesda', 'rockville', 'silver spring', 'college park',\n  'columbia', 'baltimore', 'annapolis',\n  'dmv'\n];\n\nconst REMOTE_KEYWORDS = [\n  'remote', 'full remote', 'full-remote', 'fully remote',\n  'work from home', 'wfh', 'anywhere', 'distributed'\n];\n\nfunction classifyLocation(location) {\n  if (!location) return 'Skip';\n  const loc = location.toLowerCase();\n\n  // Check for remote\n  for (const kw of REMOTE_KEYWORDS) {\n    if (loc.includes(kw)) return 'Relevant';\n  }\n\n  // Check for DMV area\n  for (const kw of DMV_KEYWORDS) {\n    if (loc.includes(kw)) return 'Relevant';\n  }\n\n  return 'Skip';\n}\n\nfor (const item of $input.all()) {\n  let html = '';\n  const json = item.json;\n\n  // Extract HTML body from Gmail API response\n  if (json.payload) {\n    if (json.payload.body && json.payload.body.data) {\n      html = Buffer.from(json.payload.body.data, 'base64').toString('utf-8');\n    } else if (json.payload.parts) {\n      for (const part of json.payload.parts) {\n        if (part.mimeType === 'text/html' && part.body && part.body.data) {\n          html = Buffer.from(part.body.data, 'base64').toString('utf-8');\n          break;\n        }\n      }\n    }\n  }\n  if (!html) html = json.html || json.textHtml || json.body || '';\n\n  // Parse date\n  const receivedDate = json.internalDate || json.date || new Date().toISOString();\n  let dateStr;\n  if (/^\\d{13}$/.test(String(receivedDate))) {\n    dateStr = new Date(parseInt(receivedDate)).toISOString().split('T')[0];\n  } else {\n    dateStr = new Date(receivedDate).toISOString().split('T')[0];\n  }\n\n  if (!html) {\n    items.push({\n      json: {\n        'Date Received': dateStr,\n        'Company': '⚠ NO HTML BODY',\n        'Job Title': 'Email body not found. Keys: ' + Object.keys(json).join(', '),\n        'URL': '', 'Location': '', 'Salary': '', 'Status': 'Error'\n      }\n    });\n    continue;\n  }\n\n  // Each job card is in a <tbody class=\"greyHover\"> block\n  const jobBlocks = html.split('greyHover');\n\n  for (let i = 1; i < jobBlocks.length; i++) {\n    const block = jobBlocks[i];\n\n    // Extract company name from logo alt text: alt=\"CompanyName logo\"\n    const logoAltMatch = block.match(/alt=\"([^\"]+?)\\s+logo\"/i);\n    const company = logoAltMatch ? logoAltMatch[1].trim() : '';\n\n    // Skip non-job blocks and the header WTTJ logo\n    if (!company) continue;\n    if (company.toLowerCase().includes('welcome to the jungle')) continue;\n\n    // Extract the tracking URL from the <a> tag before this block\n    const prevBlock = jobBlocks[i - 1];\n    const allHrefs = [...(prevBlock.matchAll(/href=\"(https?:[^\"]+)\"/g))];\n    let trackingUrl = '';\n    if (allHrefs.length > 0) {\n      trackingUrl = allHrefs[allHrefs.length - 1][1];\n    }\n\n    // Extract job title from <strong> tags\n    const strongRegex = /<strong>\\s*([\\s\\S]*?)\\s*<\\/strong>/g;\n    let jobTitle = '';\n    let strongMatch;\n    while ((strongMatch = strongRegex.exec(block)) !== null) {\n      const text = strongMatch[1]\n        .replace(/<[^>]+>/g, '')\n        .replace(/\\s+/g, ' ')\n        .trim();\n      if (text && text !== company) {\n        jobTitle = text;\n        break;\n      }\n    }\n\n    // Extract salary and location from <em> tag\n    // HTML structure: <em>Salary: $X-YK<br>Location Name</em>\n    const emMatch = block.match(/<em[^>]*>([\\s\\S]*?)<\\/em>/i);\n    let location = '';\n    let salary = '';\n    if (emMatch) {\n      // Split on <br> tags to separate lines, THEN clean HTML\n      const rawLines = emMatch[1].split(/<br\\s*\\/?>/i);\n      for (const rawLine of rawLines) {\n        const line = rawLine\n          .replace(/<[^>]+>/g, '')\n          .replace(/&nbsp;/g, ' ')\n          .replace(/\\s+/g, ' ')\n          .trim();\n        if (!line) continue;\n        if (line.match(/\\$[\\d,.]+/) || line.match(/salary/i)) {\n          salary = line;\n        } else if (line.length > 1) {\n          location = line;\n        }\n      }\n    }\n\n    // Auto-classify: Remote or DMV → Relevant, otherwise → Skip\n    const status = classifyLocation(location);\n\n    items.push({\n      json: {\n        'Date Received': dateStr,\n        'Company': company,\n        'Job Title': jobTitle,\n        'URL': trackingUrl,\n        'Location': location,\n        'Salary': salary,\n        'Status': status\n      }\n    });\n  }\n}\n\nif (items.length === 0) {\n  items.push({\n    json: {\n      'Date Received': new Date().toISOString().split('T')[0],\n      'Company': '⚠ NO JOBS PARSED',\n      'Job Title': 'Check email format',\n      'URL': '', 'Location': '', 'Salary': '', 'Status': 'Error'\n    }\n  });\n}\n\nreturn items;"
+      },
+      "id": "code-parse-email",
+      "name": "Parse WTTJ Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "google-sheets-append",
+      "name": "Append to WTTJ Job Tracker",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [950, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 — configure in n8n UI"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger - WTTJ Alerts": {
+      "main": [
+        [
+          {
+            "node": "Get Full Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Full Email": {
+      "main": [
+        [
+          {
+            "node": "Parse WTTJ Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WTTJ Email": {
+      "main": [
+        [
+          {
+            "node": "Append to WTTJ Job Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "pinData": {}
+}

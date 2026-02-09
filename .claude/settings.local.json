@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(xargs:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.welcometothejungle.com)",
+      "Bash(node:*)",
+      "Bash(docker ps:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:dev.to)",
+      "WebFetch(domain:www.freecodecamp.org)",
+      "WebFetch(domain:www.npmjs.com)"
+    ]
+  }
+}

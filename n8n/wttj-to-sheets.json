@@ -1,0 +1,159 @@
+{
+  "name": "WTTJ Job Alerts → Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 5,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "filters": {
+          "sender": "help@welcometothejungle.com"
+        },
+        "options": {
+          "downloadAttachments": false
+        }
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger - WTTJ Alerts",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail OAuth2 — configure in n8n UI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse WTTJ alert email HTML and extract job listings\n// Email format: quoted-printable encoded HTML where each job is wrapped in\n// <a href=\"sendgrid-tracking-url\"><table class=\"es-content-body\">...</table></a>\n// containing: company logo (alt text), company name (<strong>),\n// job title (<strong>), salary and location (<em>)\nconst items = [];\n\nfor (const item of $input.all()) {\n  const html = item.json.html || item.json.textHtml || item.json.body || '';\n  const receivedDate = item.json.date || item.json.internalDate || new Date().toISOString();\n\n  // Each job card is an <a> wrapping a <table class=\"es-content-body\"> with <tbody class=\"greyHover\">\n  // Split on greyHover to isolate each job block\n  const jobBlocks = html.split('greyHover');\n\n  for (let i = 1; i < jobBlocks.length; i++) {\n    const block = jobBlocks[i];\n\n    // Extract company name from logo alt text: alt=\"CompanyName logo\"\n    // Handle both quoted-printable (=3D) and normal encoding\n    const logoAltMatch = block.match(/alt=3D\"([^\"]+?)\\s+logo\"/i) ||\n                         block.match(/alt=\"([^\"]+?)\\s+logo\"/i);\n    const company = logoAltMatch ? logoAltMatch[1].trim() : '';\n\n    // Skip blocks that don't have a company (not a job block)\n    if (!company) continue;\n\n    // Extract the tracking URL from the <a> tag before this block\n    // Look in the previous block for the href that ends right before es-content-body\n    const prevBlock = jobBlocks[i - 1];\n    // The href is in a long <a> tag right before the <table...es-content-body>\n    // Find all href values and take the last one (closest to this block)\n    const allHrefs = prevBlock.match(/href=3D\"(https:[^\"]+)\"/g) ||\n                     prevBlock.match(/href=\"(https:[^\"]+)\"/g) || [];\n    let trackingUrl = '';\n    if (allHrefs.length > 0) {\n      const lastHref = allHrefs[allHrefs.length - 1];\n      const urlMatch = lastHref.match(/\"(https:[^\"]+)\"/) ||\n                      lastHref.match(/=3D\"(https:[^\"]+)\"/);\n      if (urlMatch) {\n        trackingUrl = urlMatch[1]\n          .replace(/=3D/g, '=')\n          .replace(/=\\r?\\n/g, '')\n          .replace(/\\r?\\n/g, '');\n      }\n    }\n\n    // Extract job title from <strong> tags in the job details section\n    // The company name appears in one <strong>, the job title in another\n    const strongRegex = /<strong>\\s*([\\s\\S]*?)\\s*<\\/strong>/g;\n    let jobTitle = '';\n    let strongMatch;\n    while ((strongMatch = strongRegex.exec(block)) !== null) {\n      const text = strongMatch[1]\n        .replace(/=3D/g, '=')\n        .replace(/=\\r?\\n/g, '')\n        .replace(/\\r?\\n/g, '')\n        .replace(/<[^>]+>/g, '')\n        .replace(/\\s+/g, ' ')\n        .trim();\n      // Skip if empty or matches company name\n      if (text && text !== company) {\n        jobTitle = text;\n        break;\n      }\n    }\n\n    // Extract salary and location from <em> tag\n    const emMatch = block.match(/<em[^>]*>([\\s\\S]*?)<\\/em>/i);\n    let location = '';\n    let salary = '';\n    if (emMatch) {\n      const emContent = emMatch[1]\n        .replace(/<br\\s*\\/?>/gi, '\\n')\n        .replace(/<[^>]+>/g, '')\n        .replace(/=3D/g, '=')\n        .replace(/=\\r?\\n/g, '')\n        .replace(/\\r?\\n/g, ' ')\n        .replace(/&nbsp;/g, ' ')\n        .replace(/=20/g, ' ')\n        .replace(/\\s+/g, ' ');\n      const lines = emContent.split('\\n').map(l => l.trim()).filter(l => l);\n      for (const line of lines) {\n        if (line.match(/\\$[\\d,.]+/i) || line.match(/salary/i) || line.match(/\\d+[kK]/)) {\n          salary = line.trim();\n        } else if (line.length > 1) {\n          location = line.trim();\n        }\n      }\n      // If we didn't split properly, try to parse the combined text\n      if (!salary && !location) {\n        const combined = emContent.trim();\n        const salaryMatch = combined.match(/(Salary:\\s*\\$[\\d,.\\-kK]+)/i);\n        if (salaryMatch) salary = salaryMatch[1];\n        const locMatch = combined.replace(salaryMatch ? salaryMatch[0] : '', '').trim();\n        if (locMatch) location = locMatch;\n      }\n    }\n\n    items.push({\n      json: {\n        'Date Received': new Date(receivedDate).toISOString().split('T')[0],\n        'Company': company,\n        'Job Title': jobTitle,\n        'URL': trackingUrl,\n        'Location': location,\n        'Salary': salary,\n        'Status': 'New'\n      }\n    });\n  }\n}\n\n// If no jobs found, return a diagnostic item\nif (items.length === 0) {\n  items.push({\n    json: {\n      'Date Received': new Date().toISOString().split('T')[0],\n      'Company': '⚠ NO JOBS PARSED',\n      'Job Title': 'Check email format — parsing may need updating',\n      'URL': '',\n      'Location': '',\n      'Salary': '',\n      'Status': 'Error'\n    }\n  });\n}\n\nreturn items;"
+      },
+      "id": "code-parse-email",
+      "name": "Parse WTTJ Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json['URL'] }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "timeout": 5000
+        }
+      },
+      "id": "http-resolve-url",
+      "name": "Resolve Tracking URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the final WTTJ URL from the redirect Location header\n// and merge it back with the parsed job data\nconst items = [];\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const httpItem = $input.all()[i];\n  const parsedItem = $('Parse WTTJ Email').all()[i];\n\n  let finalUrl = parsedItem.json['URL']; // fallback to tracking URL\n\n  // Check for redirect Location header\n  const headers = httpItem.json?.headers || httpItem.json?.responseHeaders || {};\n  const location = headers['location'] || headers['Location'] || '';\n  if (location && location.includes('welcometothejungle.com')) {\n    // Clean the URL - take just the base URL without UTM params\n    finalUrl = location.split('?')[0];\n  }\n\n  items.push({\n    json: {\n      'Date Received': parsedItem.json['Date Received'],\n      'Company': parsedItem.json['Company'],\n      'Job Title': parsedItem.json['Job Title'],\n      'URL': finalUrl,\n      'Location': parsedItem.json['Location'],\n      'Salary': parsedItem.json['Salary'],\n      'Status': 'New'\n    }\n  });\n}\n\nreturn items;"
+      },
+      "id": "code-extract-final-url",
+      "name": "Extract Final URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "google-sheets-append",
+      "name": "Append to WTTJ Job Tracker",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1200, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 — configure in n8n UI"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger - WTTJ Alerts": {
+      "main": [
+        [
+          {
+            "node": "Parse WTTJ Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WTTJ Email": {
+      "main": [
+        [
+          {
+            "node": "Resolve Tracking URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Tracking URL": {
+      "main": [
+        [
+          {
+            "node": "Extract Final URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Final URL": {
+      "main": [
+        [
+          {
+            "node": "Append to WTTJ Job Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "pinData": {}
+}
