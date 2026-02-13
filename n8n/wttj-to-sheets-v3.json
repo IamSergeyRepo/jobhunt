@@ -1,0 +1,267 @@
+{
+  "name": "WTTJ Job Alerts → Google Sheets v3 (GraphQL)",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 5,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "filters": {
+          "sender": "help@welcometothejungle.com"
+        },
+        "options": {
+          "downloadAttachments": false
+        }
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger - WTTJ Alerts",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail OAuth2 — configure in n8n UI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.exp.welcometothejungle.com/graphql",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $env.WTTJ_COOKIE }}"
+            },
+            {
+              "name": "x-csrf-token",
+              "value": "={{ $env.WTTJ_CSRF_TOKEN }}"
+            },
+            {
+              "name": "origin",
+              "value": "https://app.welcometothejungle.com"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"operationName\":\"JobRecommendations\",\"variables\":{\"ignoreSubfunctions\":false},\"query\":\"query JobRecommendations($ignoreSubfunctions: Boolean) { currentUser { id jobRecommendations(ignoreSubfunctions: $ignoreSubfunctions) { id job { id externalId title subtitle company { id name faviconPath } } } } }\"}",
+        "options": {}
+      },
+      "id": "get-recommendations",
+      "name": "Get Recommendations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Sheet1"
+        },
+        "options": {}
+      },
+      "id": "read-existing-jobs",
+      "name": "Read Existing Jobs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [450, 550],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 — configure in n8n UI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract job IDs from GraphQL JobRecommendations response\nconst items = [];\nconst input = $input.first().json;\nconst dateReceived = new Date().toISOString().split('T')[0];\n\n// Check for auth errors\nif (!input.data || !input.data.currentUser) {\n  const errorMsg = input.errors\n    ? input.errors.map(e => e.message).join('; ')\n    : 'currentUser is null — session expired';\n  items.push({\n    json: {\n      _error: true,\n      externalId: '__AUTH_ERROR__',\n      'Date Received': dateReceived,\n      'Company': '⚠ AUTH ERROR',\n      'Job Title': 'WTTJ session expired — refresh WTTJ_COOKIE and WTTJ_CSRF_TOKEN in .env',\n      'URL': '',\n      'Location': '',\n      'Remote': '',\n      'Salary': '',\n      'Experience': '',\n      'Technologies': '',\n      'Function': '',\n      'Company Size': '',\n      'Funding': '',\n      'Status': 'AUTH_EXPIRED',\n      'Source': 'graphql'\n    }\n  });\n  return items;\n}\n\nconst recommendations = input.data.currentUser.jobRecommendations || [];\n\nif (recommendations.length === 0) {\n  items.push({\n    json: {\n      _error: true,\n      externalId: '__EMPTY__',\n      'Date Received': dateReceived,\n      'Company': '⚠ NO RECOMMENDATIONS',\n      'Job Title': 'No job recommendations returned',\n      'URL': '',\n      'Location': '',\n      'Remote': '',\n      'Salary': '',\n      'Experience': '',\n      'Technologies': '',\n      'Function': '',\n      'Company Size': '',\n      'Funding': '',\n      'Status': 'Error',\n      'Source': 'graphql'\n    }\n  });\n  return items;\n}\n\nfor (const rec of recommendations) {\n  const job = rec.job;\n  items.push({\n    json: {\n      externalId: job.externalId,\n      title: job.title,\n      company: job.company.name,\n      dateReceived\n    }\n  });\n}\n\nreturn items;"
+      },
+      "id": "extract-job-ids",
+      "name": "Extract Job IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.exp.welcometothejungle.com/graphql",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $env.WTTJ_COOKIE }}"
+            },
+            {
+              "name": "x-csrf-token",
+              "value": "={{ $env.WTTJ_CSRF_TOKEN }}"
+            },
+            {
+              "name": "origin",
+              "value": "https://app.welcometothejungle.com"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ operationName: 'JobDetails', variables: { externalId: $json.externalId, currency: 'USD' }, query: 'query JobDetails($externalId: ID!, $currency: Currency!) { publicJob(externalId: $externalId) { id externalId title subtitle salaryRange { minAmount maxAmount currency } remoteOnly formattedLocationPreferences(groupRemote: true) { name matchesUserPreference } function { value } subFunction { value } minYearsExperienceRequired maxYearsExperienceRequired technologiesUsed { value } originalUrl insertedAt validUntil company { name shortDescription numberEmployees size { value } sectorTags { value } totalFunding(currency: $currency) { amount currency } } } }' }) }}",
+        "options": {}
+      },
+      "id": "get-job-details",
+      "name": "Get Job Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse job details from GraphQL response and classify by location\nconst DMV_KEYWORDS = [\n  'washington', 'dc', 'd.c.', 'district of columbia',\n  'maryland', 'virginia',\n  'arlington', 'alexandria', 'fairfax', 'reston', 'tysons',\n  'mclean', 'herndon', 'sterling', 'ashburn', 'leesburg',\n  'bethesda', 'rockville', 'silver spring', 'college park',\n  'columbia', 'baltimore', 'annapolis', 'dmv'\n];\n\nconst REMOTE_KEYWORDS = [\n  'remote', 'full remote', 'full-remote', 'fully remote',\n  'work from home', 'wfh', 'anywhere', 'distributed'\n];\n\nfunction classifyLocation(locationStr, isRemote) {\n  if (isRemote) return 'Relevant';\n  if (!locationStr) return 'Skip';\n  const loc = locationStr.toLowerCase();\n  for (const kw of REMOTE_KEYWORDS) {\n    if (loc.includes(kw)) return 'Relevant';\n  }\n  for (const kw of DMV_KEYWORDS) {\n    if (loc.includes(kw)) return 'Relevant';\n  }\n  return 'Skip';\n}\n\nconst items = [];\nconst dateReceived = new Date().toISOString().split('T')[0];\nconst extractItems = $('Extract Job IDs').all();\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const extractItem = extractItems[i]?.json || {};\n\n  // If this was an error from Extract Job IDs, pass through\n  if (extractItem._error) {\n    const { _error, externalId, ...rest } = extractItem;\n    items.push({ json: { ...rest, 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n    continue;\n  }\n\n  const json = $input.all()[i].json;\n  const job = json.data?.publicJob;\n\n  if (!job) {\n    const errorMsg = json.errors\n      ? json.errors.map(e => e.message).join('; ')\n      : 'Job not found';\n    items.push({\n      json: {\n        'Date Received': dateReceived,\n        'Company': extractItem.company || '⚠ FETCH ERROR',\n        'Job Title': extractItem.title || errorMsg,\n        'URL': '',\n        'Location': '',\n        'Remote': '',\n        'Salary': '',\n        'Experience': '',\n        'Technologies': '',\n        'Function': '',\n        'Company Size': '',\n        'Funding': '',\n        'Status': 'Error',\n        'Source': 'graphql',\n        'Job ID': '',\n        'Apply URL': '',\n        'Progress': '',\n        'Applied': ''\n      }\n    });\n    continue;\n  }\n\n  // Format salary\n  let salary = '';\n  if (job.salaryRange) {\n    const { minAmount, maxAmount, currency } = job.salaryRange;\n    const fmt = (n) => {\n      const num = parseInt(n);\n      return num >= 1000 ? `${Math.round(num / 1000)}K` : num;\n    };\n    if (minAmount && maxAmount) {\n      salary = `${currency} ${fmt(minAmount)}\\u2013${fmt(maxAmount)}`;\n    } else if (minAmount) {\n      salary = `${currency} ${fmt(minAmount)}+`;\n    } else if (maxAmount) {\n      salary = `Up to ${currency} ${fmt(maxAmount)}`;\n    }\n  }\n\n  // Format location\n  const locations = (job.formattedLocationPreferences || [])\n    .map(l => l.name)\n    .join(', ');\n\n  // Format experience\n  let experience = '';\n  if (job.minYearsExperienceRequired != null && job.maxYearsExperienceRequired != null) {\n    experience = `${job.minYearsExperienceRequired}\\u2013${job.maxYearsExperienceRequired} years`;\n  } else if (job.minYearsExperienceRequired != null) {\n    experience = `${job.minYearsExperienceRequired}+ years`;\n  } else if (job.maxYearsExperienceRequired != null) {\n    experience = `Up to ${job.maxYearsExperienceRequired} years`;\n  }\n\n  // Format technologies\n  const technologies = (job.technologiesUsed || [])\n    .map(t => t.value)\n    .join(', ');\n\n  // Company info\n  const co = job.company || {};\n  const companySize = co.size?.value || '';\n  const funding = co.totalFunding\n    ? `${co.totalFunding.currency} ${Math.round(parseInt(co.totalFunding.amount) / 1000000)}M`\n    : '';\n\n  // Classify\n  const remote = job.remoteOnly ? 'Yes' : 'No';\n  const status = classifyLocation(locations, job.remoteOnly);\n\n  // Build URL\n  const url = `https://app.welcometothejungle.com/jobs/${job.externalId}`;\n\n  items.push({\n    json: {\n      'Date Received': dateReceived,\n      'Company': co.name || '',\n      'Job Title': job.title || '',\n      'URL': url,\n      'Location': locations,\n      'Remote': remote,\n      'Salary': salary,\n      'Experience': experience,\n      'Technologies': technologies,\n      'Function': [job.function?.value, job.subFunction?.value].filter(Boolean).join(' \\u2192 '),\n      'Company Size': companySize,\n      'Funding': funding,\n      'Status': status,\n      'Source': 'graphql',\n      'Job ID': job.externalId,\n      'Apply URL': job.originalUrl || '',\n      'Progress': 'new',\n      'Applied': ''\n    }\n  });\n}\n\nif (items.length === 0) {\n  items.push({\n    json: {\n      'Date Received': dateReceived,\n      'Company': '⚠ NO JOBS PROCESSED',\n      'Job Title': 'All job detail fetches failed',\n      'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '',\n      'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '',\n      'Status': 'Error',\n      'Source': 'graphql',\n      'Job ID': '',\n      'Apply URL': '',\n      'Progress': '',\n      'Applied': ''\n    }\n  });\n}\n\nreturn items;"
+      },
+      "id": "parse-classify",
+      "name": "Parse & Classify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter out jobs that already exist in the Google Sheet (dedup by URL)\nconst items = $input.all();\nlet existingUrls;\n\ntry {\n  const existingRows = $('Read Existing Jobs').all();\n  existingUrls = new Set(\n    existingRows.map(row => (row.json['URL'] || '').trim()).filter(u => u.length > 0)\n  );\n} catch (e) {\n  // Read failed — pass everything through (better duplicates than lost data)\n  return items;\n}\n\nconst newItems = [];\nlet skippedCount = 0;\n\nfor (const item of items) {\n  const url = (item.json['URL'] || '').trim();\n  const status = item.json['Status'] || '';\n\n  // Always pass through error/diagnostic items\n  if (!url || status === 'AUTH_EXPIRED' || status === 'Error') {\n    newItems.push(item);\n    continue;\n  }\n\n  if (existingUrls.has(url)) {\n    skippedCount++;\n    continue;\n  }\n\n  newItems.push(item);\n}\n\nif (skippedCount > 0) {\n  console.log(`Dedup: skipped ${skippedCount} duplicate(s), passing ${newItems.length} new item(s).`);\n}\n\nreturn newItems;"
+      },
+      "id": "filter-duplicates",
+      "name": "Filter Duplicates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "google-sheets-append",
+      "name": "Append to WTTJ Job Tracker",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1700, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 — configure in n8n UI"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger - WTTJ Alerts": {
+      "main": [
+        [
+          {
+            "node": "Get Recommendations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Existing Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recommendations": {
+      "main": [
+        [
+          {
+            "node": "Extract Job IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Job IDs": {
+      "main": [
+        [
+          {
+            "node": "Get Job Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Job Details": {
+      "main": [
+        [
+          {
+            "node": "Parse & Classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Classify": {
+      "main": [
+        [
+          {
+            "node": "Filter Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Append to WTTJ Job Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "pinData": {}
+}

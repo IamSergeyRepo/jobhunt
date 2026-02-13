@@ -1,162 +1,186 @@
 # WTTJ Job Tracker
 
-Automatically captures job links from Welcome to the Jungle email alerts into a Google Sheet using n8n.
+Automatically captures job recommendations from Welcome to the Jungle into a Google Sheet, classifies them by location relevance, and provides semi-automated job application via Playwright.
 
 ## Architecture
 
 ```
 Gmail (WTTJ alerts)
-  → n8n Gmail Trigger (polls every 5 min)
-  → Get Full Email (fetches HTML body via Gmail API)
-  → Parse WTTJ Email (extracts company, title, salary, location)
-  → Resolve Tracking URL (follows SendGrid redirects to get clean WTTJ URL)
-  → Extract Final URL (pulls app.welcometothejungle.com/jobs/... link)
-  → Google Sheets (appends row)
+  -> n8n v3 workflow (GraphQL API)
+     -> Get Recommendations (WTTJ GraphQL)
+     -> Get Job Details (per job)
+     -> Parse & Classify (DMV/remote = Relevant, else Skip)
+     -> Filter Duplicates (dedup by URL)
+     -> Append to Google Sheet
+
+npm run apply
+  -> Fetch pending Relevant jobs (via n8n Apply Helper webhook)
+  -> Open Chrome (persistent profile)
+  -> For each job:
+     -> Navigate to Apply URL
+     -> Detect ATS (Greenhouse / Lever)
+     -> Auto-fill form (name, email, phone, resume, LinkedIn)
+     -> Pause for review
+     -> User: submit / filled / skip / quit
+     -> Update Progress in sheet via webhook
 ```
 
-## Google Sheet Setup
+## Google Sheet Columns
 
-Create a Google Sheet named **"WTTJ Job Tracker"** with these headers in row 1:
+| Column | Description |
+|--------|-------------|
+| Date Received | When the job was captured |
+| Company | Company name |
+| Job Title | Position title |
+| URL | WTTJ job page |
+| Location | Formatted location(s) |
+| Remote | Yes/No |
+| Salary | Formatted salary range |
+| Experience | Required years |
+| Technologies | Tech stack |
+| Function | Job function/subfunction |
+| Company Size | Size category |
+| Funding | Total funding amount |
+| Status | `Relevant` / `Skip` / `Error` |
+| Source | `graphql` |
+| Job ID | WTTJ `externalId` (stable key) |
+| Apply URL | Company ATS link (Greenhouse/Lever/etc.) |
+| Progress | `new` / `opened` / `filled` / `submitted` / `skipped` |
+| Applied | Date string (set when submitted) |
 
-| A | B | C | D | E | F | G |
-|---|---|---|---|---|---|---|
-| Date Received | Company | Job Title | URL | Location | Salary | Status |
+## Setup
 
-## Google Cloud Setup
+### Prerequisites
 
-Before configuring n8n, create a Google Cloud project with OAuth2 credentials:
+- Docker & Docker Compose
+- Node.js 18+
+- Google Cloud project with OAuth2 credentials (Gmail API, Google Sheets API, Google Drive API enabled)
 
-1. Go to https://console.cloud.google.com
-2. Create a new project (e.g. "n8n-wttj")
-3. Enable these APIs under **APIs & Services > Library**:
-   - **Gmail API**
-   - **Google Sheets API**
-   - **Google Drive API**
-4. Configure **OAuth consent screen** (APIs & Services > OAuth consent screen):
-   - Choose **External**
-   - Add your email as a **Test user**
-5. Create **OAuth credentials** (APIs & Services > Credentials > Create Credentials > OAuth client ID):
-   - Application type: **Web application**
-   - Authorized redirect URI: `http://localhost:5678/rest/oauth2-credential/callback`
-   - Copy the **Client ID** and **Client Secret**
-
-## n8n Setup
-
-### Start n8n (Docker)
+### 1. Start n8n
 
 ```bash
-docker run -d --name n8n \
-  -p 5678:5678 \
-  -v ~/.n8n:/home/node/.n8n \
-  -e N8N_SECURE_COOKIE=false \
-  n8nio/n8n
+docker compose up -d
 ```
 
 Open http://localhost:5678 and create an account.
 
-### Import the Workflow
+### 2. Configure WTTJ Auth
 
-1. In n8n UI, go to **Workflows** > **Import from File**
-2. Select `n8n/wttj-to-sheets-v2.json`
-3. The workflow has 6 nodes:
-   - **Gmail Trigger - WTTJ Alerts** — polls for emails from `help@welcometothejungle.com`
-   - **Get Full Email** — fetches the full email HTML body using the Gmail API
-   - **Parse WTTJ Email** — extracts job data from the HTML structure
-   - **Resolve Tracking URL** — follows SendGrid tracking redirects
-   - **Extract Final URL** — extracts the clean `app.welcometothejungle.com/jobs/...` URL
-   - **Append to WTTJ Job Tracker** — writes each job as a row in Google Sheets
-
-### Configure Credentials
-
-You need to set up two credential types using the Client ID and Client Secret from Google Cloud.
-
-#### Gmail OAuth2
-
-Used by both the **Gmail Trigger** and **Get Full Email** nodes:
-
-1. Click the **Gmail Trigger** node
-2. Under **Credential to connect with**, click **Create New** > **Gmail OAuth2**
-3. Paste your **Client ID** and **Client Secret**
-4. Click **Sign in with Google** > **Continue** past the "unverified app" warning > **Allow**
-5. Click the **Get Full Email** node and select the same Gmail credential
-
-#### Google Sheets OAuth2
-
-1. Click the **Append to WTTJ Job Tracker** node
-2. Under **Credential to connect with**, click **Create New** > **Google Sheets OAuth2**
-3. Paste the same **Client ID** and **Client Secret**
-4. Click **Sign in with Google** > **Continue** > **Allow**
-5. Select your **"WTTJ Job Tracker"** spreadsheet and **Sheet1**
-
-### Test the Workflow
-
-1. Make sure you have a recent WTTJ alert email in your Gmail
-2. Click **Test Workflow**
-3. Check each node's output:
-   - **Gmail Trigger** should find the email
-   - **Get Full Email** should return the full HTML body
-   - **Parse WTTJ Email** should output one item per job with Company, Job Title, Salary, Location
-   - **Resolve Tracking URL** / **Extract Final URL** should resolve to `app.welcometothejungle.com` URLs
-   - **Google Sheets** should append rows
-4. Verify the data appears in your Google Sheet
-
-### Activate
-
-Toggle the workflow **Active** to run automatically. It polls Gmail every 5 minutes.
-
-## How the Email Parser Works
-
-WTTJ alert emails have this structure per job:
-
-```html
-<a href="sendgrid-tracking-url">
-  <table class="es-content-body">
-    <tbody class="greyHover">
-      <img alt="CompanyName logo" ...>
-      <strong>CompanyName</strong>
-      <strong>Job Title</strong>
-      <em>Salary: $X-YK<br>Location</em>
-    </tbody>
-  </table>
-</a>
-```
-
-The parser:
-1. Splits the HTML on `greyHover` to isolate each job card
-2. Extracts company name from the logo `alt` attribute
-3. Extracts job title from `<strong>` tags (skipping the company name)
-4. Splits salary and location from the `<em>` tag using `<br>` as delimiter
-5. Grabs the SendGrid tracking URL from the wrapping `<a>` tag
-6. The HTTP Request node then follows the redirect to get the clean WTTJ URL
-
-## Managing n8n
+Extract cookies from browser DevTools (Network tab, any request to `api.exp.welcometothejungle.com`):
 
 ```bash
-# Stop
-docker stop n8n
-
-# Start again
-docker start n8n
-
-# View logs
-docker logs -f n8n
-
-# Remove container (data persists in ~/.n8n)
-docker rm -f n8n
+# .env
+WTTJ_COOKIE=<your cookie string>
+WTTJ_CSRF_TOKEN=<your csrf token>
 ```
 
-## Troubleshooting
+### 3. Import Workflows
 
-- **"No Gmail data found"** — No recent email from `help@welcometothejungle.com` in your inbox. Wait for a new alert or check the sender filter.
-- **"NO HTML BODY"** — The Get Full Email node didn't return the body. Check that `simple` is set to `false` in that node.
-- **"NO JOBS PARSED"** — The HTML structure may have changed. Run the workflow manually and inspect the Parse node input to see the raw HTML.
-- **Google API errors** — Make sure Gmail API, Google Sheets API, and Google Drive API are all enabled in your Google Cloud project.
-- **"unverified app" warning** — Expected. Click Continue. Your app is in Testing mode, which is fine for personal use.
+**v3 Workflow** (`n8n/wttj-to-sheets-v3.json`):
+1. Import in n8n UI or deploy via API
+2. Configure Gmail OAuth2 credential on the Gmail Trigger node
+3. Configure Google Sheets OAuth2 credential on Read Existing Jobs and Append nodes
+4. Select your "WTJ Job Tracker" spreadsheet
+
+**Apply Helper** (`n8n/apply-helper.json`):
+1. Import or deploy via API
+2. Configure Google Sheets OAuth2 credential on Read Sheet and Update Sheet nodes
+3. Select the same "WTJ Job Tracker" spreadsheet
+4. Activate the workflow (webhook must be live)
+
+### 4. Configure Apply Navigator
+
+```bash
+# .env
+APPLICANT_FIRST_NAME=Your Name
+APPLICANT_LAST_NAME=Last Name
+APPLICANT_EMAIL=you@example.com
+APPLICANT_PHONE=+15551234567
+APPLICANT_LINKEDIN=https://linkedin.com/in/yourprofile
+APPLICANT_RESUME_PATH=./auth/resume.pdf
+N8N_WEBHOOK_URL=http://localhost:5678/webhook
+```
+
+Place your resume PDF in the `auth/` directory.
+
+### 5. Install Dependencies
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+## Usage
+
+### Capture Jobs
+
+The v3 workflow runs automatically when a WTTJ alert email arrives. It fetches full job details via the GraphQL API and classifies each job as Relevant (remote or DMV area) or Skip.
+
+### Apply to Jobs
+
+```bash
+npm run apply
+```
+
+The Apply Navigator:
+1. Fetches pending Relevant jobs (Progress = `new`, Apply URL present)
+2. Opens Chrome with a persistent profile
+3. For each job, navigates to the Apply URL and detects the ATS platform
+4. Auto-fills standard fields on Greenhouse and Lever forms
+5. Pauses for you to review and fill any custom questions
+
+**Interactive commands:**
+- **Enter** — mark as `filled` (form filled, not submitted)
+- **submit** — mark as `submitted` with today's date
+- **skip** — mark as `skipped`
+- **quit** — exit the session
+
+### Re-authenticate WTTJ Session
+
+```bash
+npm run reauth
+```
+
+Opens Chrome to refresh WTTJ session cookies when they expire.
+
+## Supported ATS Platforms
+
+| Platform | Auto-fill | Notes |
+|----------|-----------|-------|
+| Greenhouse (`boards.greenhouse.io`, `job-boards.greenhouse.io`) | Yes | Name, email, phone, country, resume, LinkedIn |
+| Lever (`jobs.lever.co`) | Yes | Name, email, phone, resume, LinkedIn |
+| Others (Ashby, Workday, etc.) | No | Opens the page for manual filling |
+
+## n8n MCP Server
+
+The `n8n-mcp/` directory contains an MCP server that wraps the n8n REST API for use with Claude Code. It provides tools to list, create, update, activate/deactivate workflows, and trigger webhooks.
+
+```bash
+# Started on-demand by Claude Code (uses Docker Compose profiles)
+docker compose run --rm -T n8n-mcp
+```
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `n8n/wttj-to-sheets-v2.json` | n8n workflow (current version) |
-| `n8n/wttj-to-sheets.json` | n8n workflow (v1, deprecated) |
-| `README.md` | This file |
+| `n8n/wttj-to-sheets-v3.json` | v3 workflow — GraphQL API, dedup, classification |
+| `n8n/wttj-to-sheets-v2.json` | v2 workflow (deprecated) — email HTML parsing |
+| `n8n/apply-helper.json` | Apply Helper webhook workflow |
+| `scripts/apply-navigator.mjs` | Main apply orchestration script |
+| `scripts/ats/greenhouse.mjs` | Greenhouse form auto-filler |
+| `scripts/ats/lever.mjs` | Lever form auto-filler |
+| `scripts/ats/utils.mjs` | Shared form-filling helpers |
+| `scripts/wttj-reauth.mjs` | WTTJ session re-authentication |
+| `docker-compose.yml` | n8n + MCP server |
+| `package.json` | Node.js scripts and dependencies |
+
+## Troubleshooting
+
+- **"Failed to fetch pending jobs"** — Is n8n running? `docker compose up -d`. Is the Apply Helper workflow activated?
+- **"Unknown ATS — fill manually"** — The job's ATS platform isn't supported yet. Fill the form manually.
+- **"Could not auto-fill form"** — The ATS page structure may differ from expected. Fill manually.
+- **"ProcessSingleton" error** — A previous Chrome session is still running. Kill it: `pkill -f "Google Chrome for Testing"`
+- **Phone country code issues** — The script auto-selects US (+1) for phone numbers starting with `+1`.
+- **Google API errors** — Ensure Gmail API, Google Sheets API, and Google Drive API are enabled.
+- **WTTJ auth expired** — Run `npm run reauth` to refresh session cookies.

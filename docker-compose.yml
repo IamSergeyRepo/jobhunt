@@ -8,6 +8,9 @@ services:
     environment:
       - N8N_SECURE_COOKIE=false
       - N8N_PUBLIC_API_ENABLED=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - WTTJ_COOKIE=${WTTJ_COOKIE}
+      - WTTJ_CSRF_TOKEN=${WTTJ_CSRF_TOKEN}
 
   n8n-mcp:
     build: ./n8n-mcp

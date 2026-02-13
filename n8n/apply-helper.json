@@ -1,0 +1,225 @@
+{
+  "name": "WTTJ Apply Helper",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "apply-helper",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "apply-helper-id"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Sheet1"
+        },
+        "options": {}
+      },
+      "id": "read-sheet",
+      "name": "Read Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [450, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 — configure in n8n UI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Webhook').first().json.body.action }}",
+                    "rightValue": "get-pending",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": "get-pending"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Webhook').first().json.body.action }}",
+                    "rightValue": "update-progress",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": "update-progress"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "switch-action",
+      "name": "Switch Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allRows = $input.all();\n\nconst pending = allRows.filter(row => {\n  const j = row.json;\n  return j['Status'] === 'Relevant'\n    && (j['Progress'] === 'new' || !j['Progress'])\n    && j['Apply URL'] && j['Apply URL'].trim() !== '';\n});\n\nconst jobs = pending.map(row => ({\n  jobId: row.json['Job ID'] || '',\n  company: row.json['Company'] || '',\n  jobTitle: row.json['Job Title'] || '',\n  url: row.json['URL'] || '',\n  applyUrl: row.json['Apply URL'] || '',\n  location: row.json['Location'] || '',\n  salary: row.json['Salary'] || ''\n}));\n\nreturn [{ json: { jobs, count: jobs.length } }];"
+      },
+      "id": "filter-pending",
+      "name": "Filter Pending",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [950, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($input.first().json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-pending",
+      "name": "Respond Pending",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body;\n\nreturn [{\n  json: {\n    'Job ID': body.jobId,\n    'Progress': body.progress,\n    'Applied': body.applied || ''\n  }\n}];"
+      },
+      "id": "prepare-update",
+      "name": "Prepare Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [950, 400]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Job ID": "={{ $json['Job ID'] }}",
+            "Progress": "={{ $json['Progress'] }}",
+            "Applied": "={{ $json['Applied'] }}"
+          },
+          "matchingColumns": ["Job ID"],
+          "schema": [
+            { "id": "Job ID", "displayName": "Job ID", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Progress", "displayName": "Progress", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "Applied", "displayName": "Applied", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-sheet",
+      "name": "Update Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1200, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 — configure in n8n UI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, jobId: $('Prepare Update').first().json['Job ID'] }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-update",
+      "name": "Respond Update",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1450, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Read Sheet", "type": "main", "index": 0 }]
+      ]
+    },
+    "Read Sheet": {
+      "main": [
+        [{ "node": "Switch Action", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch Action": {
+      "main": [
+        [{ "node": "Filter Pending", "type": "main", "index": 0 }],
+        [{ "node": "Prepare Update", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filter Pending": {
+      "main": [
+        [{ "node": "Respond Pending", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Update": {
+      "main": [
+        [{ "node": "Update Sheet", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Sheet": {
+      "main": [
+        [{ "node": "Respond Update", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
