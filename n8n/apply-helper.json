@@ -44,67 +44,13 @@
     },
     {
       "parameters": {
-        "rules": {
-          "values": [
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict"
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Webhook').first().json.body.action }}",
-                    "rightValue": "get-pending",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": "get-pending"
-            },
-            {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict"
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ $('Webhook').first().json.body.action }}",
-                    "rightValue": "update-progress",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
-                  }
-                ]
-              },
-              "renameOutput": "update-progress"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "switch-action",
-      "name": "Switch Action",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [700, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const allRows = $input.all();\n\nconst pending = allRows.filter(row => {\n  const j = row.json;\n  return j['Status'] === 'Relevant'\n    && (j['Progress'] === 'new' || !j['Progress'])\n    && j['Apply URL'] && j['Apply URL'].trim() !== '';\n});\n\nconst jobs = pending.map(row => ({\n  jobId: row.json['Job ID'] || '',\n  company: row.json['Company'] || '',\n  jobTitle: row.json['Job Title'] || '',\n  url: row.json['URL'] || '',\n  applyUrl: row.json['Apply URL'] || '',\n  location: row.json['Location'] || '',\n  salary: row.json['Salary'] || ''\n}));\n\nreturn [{ json: { jobs, count: jobs.length } }];"
+        "jsCode": "const webhookJson = $('Webhook').first().json;\nconst body = webhookJson.body || webhookJson;\nconst action = body.action;\n\nif (action !== 'get-pending') return [];\n\nconst allRows = $input.all();\n\nconst pending = allRows.filter(row => {\n  const j = row.json;\n  return j['Status'] === 'Relevant'\n    && (j['Progress'] === 'new' || !j['Progress'])\n    && j['Apply URL'] && j['Apply URL'].trim() !== '';\n});\n\nconst jobs = pending.map(row => ({\n  jobId: row.json['Job ID'] || '',\n  company: row.json['Company'] || '',\n  jobTitle: row.json['Job Title'] || '',\n  url: row.json['URL'] || '',\n  applyUrl: row.json['Apply URL'] || '',\n  location: row.json['Location'] || '',\n  salary: row.json['Salary'] || ''\n}));\n\nreturn [{ json: { jobs, count: jobs.length } }];"
       },
       "id": "filter-pending",
       "name": "Filter Pending",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [950, 200]
+      "position": [760, 208]
     },
     {
       "parameters": {
@@ -118,17 +64,17 @@
       "name": "Respond Pending",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1200, 200]
+      "position": [1000, 208]
     },
     {
       "parameters": {
-        "jsCode": "const body = $('Webhook').first().json.body;\n\nreturn [{\n  json: {\n    'Job ID': body.jobId,\n    'Progress': body.progress,\n    'Applied': body.applied || ''\n  }\n}];"
+        "jsCode": "const webhookJson = $('Webhook').first().json;\nconst body = webhookJson.body || webhookJson;\nconst action = body.action;\n\nif (action !== 'update-progress') return [];\n\nreturn [{\n  json: {\n    'Job ID': body.jobId,\n    'Progress': body.progress,\n    'Applied': body.applied || ''\n  }\n}];"
       },
       "id": "prepare-update",
       "name": "Prepare Update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [950, 400]
+      "position": [760, 400]
     },
     {
       "parameters": {
@@ -163,7 +109,7 @@
       "name": "Update Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1200, 400],
+      "position": [1000, 400],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "",
@@ -183,7 +129,7 @@
       "name": "Respond Update",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1450, 400]
+      "position": [1250, 400]
     }
   ],
   "connections": {
@@ -194,13 +140,10 @@
     },
     "Read Sheet": {
       "main": [
-        [{ "node": "Switch Action", "type": "main", "index": 0 }]
-      ]
-    },
-    "Switch Action": {
-      "main": [
-        [{ "node": "Filter Pending", "type": "main", "index": 0 }],
-        [{ "node": "Prepare Update", "type": "main", "index": 0 }]
+        [
+          { "node": "Filter Pending", "type": "main", "index": 0 },
+          { "node": "Prepare Update", "type": "main", "index": 0 }
+        ]
       ]
     },
     "Filter Pending": {

@@ -173,7 +173,7 @@ async function main() {
       }
 
       // Interactive prompt
-      console.log('\n    Commands: [Enter]=filled  submit=submitted  skip=skip  quit=exit');
+      console.log('\n    Commands: [Enter]=submitted  filled=filled  skip=skip  quit=exit');
       const answer = await prompt('    > ');
 
       if (answer === 'quit' || answer === 'q') {
@@ -182,16 +182,6 @@ async function main() {
         try {
           await updateProgress(job.jobId, 'opened');
         } catch { /* ignore */ }
-      } else if (answer === 'submit' || answer === 's') {
-        const today = new Date().toISOString().split('T')[0];
-        try {
-          await updateProgress(job.jobId, 'submitted', today);
-          console.log('    -> Marked as submitted');
-          summary.submitted++;
-        } catch (err) {
-          console.error(`    -> Failed to update: ${err.message}`);
-          summary.errors++;
-        }
       } else if (answer === 'skip') {
         try {
           await updateProgress(job.jobId, 'skipped');
@@ -201,12 +191,22 @@ async function main() {
           console.error(`    -> Failed to update: ${err.message}`);
           summary.errors++;
         }
-      } else {
-        // Default: mark as filled
+      } else if (answer === 'filled' || answer === 'f') {
         try {
           await updateProgress(job.jobId, 'filled');
           console.log('    -> Marked as filled');
           summary.filled++;
+        } catch (err) {
+          console.error(`    -> Failed to update: ${err.message}`);
+          summary.errors++;
+        }
+      } else {
+        // Default (Enter): mark as submitted
+        const today = new Date().toISOString().split('T')[0];
+        try {
+          await updateProgress(job.jobId, 'submitted', today);
+          console.log('    -> Marked as submitted');
+          summary.submitted++;
         } catch (err) {
           console.error(`    -> Failed to update: ${err.message}`);
           summary.errors++;

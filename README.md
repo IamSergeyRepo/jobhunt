@@ -130,8 +130,8 @@ The Apply Navigator:
 5. Pauses for you to review and fill any custom questions
 
 **Interactive commands:**
-- **Enter** — mark as `filled` (form filled, not submitted)
-- **submit** — mark as `submitted` with today's date
+- **Enter** — mark as `submitted` with today's date
+- **filled** — mark as `filled` (form filled, not submitted)
 - **skip** — mark as `skipped`
 - **quit** — exit the session
 

@@ -1,5 +1,5 @@
 {
-  "name": "WTTJ Job Alerts → Google Sheets v3 (GraphQL)",
+  "name": "WTTJ Job Alerts \u2192 Google Sheets v3 (GraphQL)",
   "nodes": [
     {
       "parameters": {
@@ -14,20 +14,17 @@
         },
         "filters": {
           "sender": "help@welcometothejungle.com"
-        },
-        "options": {
-          "downloadAttachments": false
         }
       },
       "id": "gmail-trigger",
       "name": "Gmail Trigger - WTTJ Alerts",
       "type": "n8n-nodes-base.gmailTrigger",
       "typeVersion": 1.2,
-      "position": [200, 300],
+      "position": [208, 304],
       "credentials": {
         "gmailOAuth2": {
-          "id": "",
-          "name": "Gmail OAuth2 — configure in n8n UI"
+          "id": "W37w2VUS9ryGJWRq",
+          "name": "Gmail account"
         }
       }
     },
@@ -38,18 +35,9 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "Cookie",
-              "value": "={{ $env.WTTJ_COOKIE }}"
-            },
-            {
-              "name": "x-csrf-token",
-              "value": "={{ $env.WTTJ_CSRF_TOKEN }}"
-            },
-            {
-              "name": "origin",
-              "value": "https://app.welcometothejungle.com"
-            }
+            { "name": "Cookie", "value": "={{ $env.WTTJ_COOKIE }}" },
+            { "name": "x-csrf-token", "value": "={{ $env.WTTJ_CSRF_TOKEN }}" },
+            { "name": "origin", "value": "https://app.welcometothejungle.com" }
           ]
         },
         "sendBody": true,
@@ -61,7 +49,7 @@
       "name": "Get Recommendations",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [450, 300]
+      "position": [464, 304]
     },
     {
       "parameters": {
@@ -69,12 +57,16 @@
         "documentId": {
           "__rl": true,
           "mode": "list",
-          "value": ""
+          "value": "1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34",
+          "cachedResultName": "WTJ Job Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34/edit?usp=drivesdk"
         },
         "sheetName": {
           "__rl": true,
           "mode": "list",
-          "value": "Sheet1"
+          "value": "gid=0",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34/edit#gid=0"
         },
         "options": {}
       },
@@ -82,23 +74,23 @@
       "name": "Read Existing Jobs",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [450, 550],
+      "position": [464, 560],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets OAuth2 — configure in n8n UI"
+          "id": "0pHaLOuQws9nqOt4",
+          "name": "Google Sheets account"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Extract job IDs from GraphQL JobRecommendations response\nconst items = [];\nconst input = $input.first().json;\nconst dateReceived = new Date().toISOString().split('T')[0];\n\n// Check for auth errors\nif (!input.data || !input.data.currentUser) {\n  const errorMsg = input.errors\n    ? input.errors.map(e => e.message).join('; ')\n    : 'currentUser is null — session expired';\n  items.push({\n    json: {\n      _error: true,\n      externalId: '__AUTH_ERROR__',\n      'Date Received': dateReceived,\n      'Company': '⚠ AUTH ERROR',\n      'Job Title': 'WTTJ session expired — refresh WTTJ_COOKIE and WTTJ_CSRF_TOKEN in .env',\n      'URL': '',\n      'Location': '',\n      'Remote': '',\n      'Salary': '',\n      'Experience': '',\n      'Technologies': '',\n      'Function': '',\n      'Company Size': '',\n      'Funding': '',\n      'Status': 'AUTH_EXPIRED',\n      'Source': 'graphql'\n    }\n  });\n  return items;\n}\n\nconst recommendations = input.data.currentUser.jobRecommendations || [];\n\nif (recommendations.length === 0) {\n  items.push({\n    json: {\n      _error: true,\n      externalId: '__EMPTY__',\n      'Date Received': dateReceived,\n      'Company': '⚠ NO RECOMMENDATIONS',\n      'Job Title': 'No job recommendations returned',\n      'URL': '',\n      'Location': '',\n      'Remote': '',\n      'Salary': '',\n      'Experience': '',\n      'Technologies': '',\n      'Function': '',\n      'Company Size': '',\n      'Funding': '',\n      'Status': 'Error',\n      'Source': 'graphql'\n    }\n  });\n  return items;\n}\n\nfor (const rec of recommendations) {\n  const job = rec.job;\n  items.push({\n    json: {\n      externalId: job.externalId,\n      title: job.title,\n      company: job.company.name,\n      dateReceived\n    }\n  });\n}\n\nreturn items;"
+        "jsCode": "// Extract job IDs from GraphQL JobRecommendations response\nconst items = [];\nconst input = $input.first().json;\nconst dateReceived = new Date().toISOString().split('T')[0];\n\nif (!input.data || !input.data.currentUser) {\n  const errorMsg = input.errors ? input.errors.map(e => e.message).join('; ') : 'currentUser is null \u2014 session expired';\n  items.push({ json: { _isNew: true, _error: true, externalId: '__AUTH_ERROR__', 'Date Received': dateReceived, 'Company': '\u26a0 AUTH ERROR', 'Job Title': 'WTTJ session expired \u2014 refresh WTTJ_COOKIE and WTTJ_CSRF_TOKEN in .env', 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Status': 'AUTH_EXPIRED', 'Source': 'graphql' } });\n  return items;\n}\n\nconst recommendations = input.data.currentUser.jobRecommendations || [];\n\nif (recommendations.length === 0) {\n  items.push({ json: { _isNew: true, _error: true, externalId: '__EMPTY__', 'Date Received': dateReceived, 'Company': '\u26a0 NO RECOMMENDATIONS', 'Job Title': 'No job recommendations returned', 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Status': 'Error', 'Source': 'graphql' } });\n  return items;\n}\n\nfor (const rec of recommendations) {\n  const job = rec.job;\n  items.push({ json: { _isNew: true, externalId: job.externalId, title: job.title, company: job.company.name, dateReceived } });\n}\n\nreturn items;"
       },
       "id": "extract-job-ids",
       "name": "Extract Job IDs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [700, 300]
+      "position": [704, 304]
     },
     {
       "parameters": {
@@ -107,18 +99,9 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "Cookie",
-              "value": "={{ $env.WTTJ_COOKIE }}"
-            },
-            {
-              "name": "x-csrf-token",
-              "value": "={{ $env.WTTJ_CSRF_TOKEN }}"
-            },
-            {
-              "name": "origin",
-              "value": "https://app.welcometothejungle.com"
-            }
+            { "name": "Cookie", "value": "={{ $env.WTTJ_COOKIE }}" },
+            { "name": "x-csrf-token", "value": "={{ $env.WTTJ_CSRF_TOKEN }}" },
+            { "name": "origin", "value": "https://app.welcometothejungle.com" }
           ]
         },
         "sendBody": true,
@@ -130,27 +113,38 @@
       "name": "Get Job Details",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [950, 300]
+      "position": [960, 304]
     },
     {
       "parameters": {
-        "jsCode": "// Parse job details from GraphQL response and classify by location\nconst DMV_KEYWORDS = [\n  'washington', 'dc', 'd.c.', 'district of columbia',\n  'maryland', 'virginia',\n  'arlington', 'alexandria', 'fairfax', 'reston', 'tysons',\n  'mclean', 'herndon', 'sterling', 'ashburn', 'leesburg',\n  'bethesda', 'rockville', 'silver spring', 'college park',\n  'columbia', 'baltimore', 'annapolis', 'dmv'\n];\n\nconst REMOTE_KEYWORDS = [\n  'remote', 'full remote', 'full-remote', 'fully remote',\n  'work from home', 'wfh', 'anywhere', 'distributed'\n];\n\nfunction classifyLocation(locationStr, isRemote) {\n  if (isRemote) return 'Relevant';\n  if (!locationStr) return 'Skip';\n  const loc = locationStr.toLowerCase();\n  for (const kw of REMOTE_KEYWORDS) {\n    if (loc.includes(kw)) return 'Relevant';\n  }\n  for (const kw of DMV_KEYWORDS) {\n    if (loc.includes(kw)) return 'Relevant';\n  }\n  return 'Skip';\n}\n\nconst items = [];\nconst dateReceived = new Date().toISOString().split('T')[0];\nconst extractItems = $('Extract Job IDs').all();\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const extractItem = extractItems[i]?.json || {};\n\n  // If this was an error from Extract Job IDs, pass through\n  if (extractItem._error) {\n    const { _error, externalId, ...rest } = extractItem;\n    items.push({ json: { ...rest, 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n    continue;\n  }\n\n  const json = $input.all()[i].json;\n  const job = json.data?.publicJob;\n\n  if (!job) {\n    const errorMsg = json.errors\n      ? json.errors.map(e => e.message).join('; ')\n      : 'Job not found';\n    items.push({\n      json: {\n        'Date Received': dateReceived,\n        'Company': extractItem.company || '⚠ FETCH ERROR',\n        'Job Title': extractItem.title || errorMsg,\n        'URL': '',\n        'Location': '',\n        'Remote': '',\n        'Salary': '',\n        'Experience': '',\n        'Technologies': '',\n        'Function': '',\n        'Company Size': '',\n        'Funding': '',\n        'Status': 'Error',\n        'Source': 'graphql',\n        'Job ID': '',\n        'Apply URL': '',\n        'Progress': '',\n        'Applied': ''\n      }\n    });\n    continue;\n  }\n\n  // Format salary\n  let salary = '';\n  if (job.salaryRange) {\n    const { minAmount, maxAmount, currency } = job.salaryRange;\n    const fmt = (n) => {\n      const num = parseInt(n);\n      return num >= 1000 ? `${Math.round(num / 1000)}K` : num;\n    };\n    if (minAmount && maxAmount) {\n      salary = `${currency} ${fmt(minAmount)}\\u2013${fmt(maxAmount)}`;\n    } else if (minAmount) {\n      salary = `${currency} ${fmt(minAmount)}+`;\n    } else if (maxAmount) {\n      salary = `Up to ${currency} ${fmt(maxAmount)}`;\n    }\n  }\n\n  // Format location\n  const locations = (job.formattedLocationPreferences || [])\n    .map(l => l.name)\n    .join(', ');\n\n  // Format experience\n  let experience = '';\n  if (job.minYearsExperienceRequired != null && job.maxYearsExperienceRequired != null) {\n    experience = `${job.minYearsExperienceRequired}\\u2013${job.maxYearsExperienceRequired} years`;\n  } else if (job.minYearsExperienceRequired != null) {\n    experience = `${job.minYearsExperienceRequired}+ years`;\n  } else if (job.maxYearsExperienceRequired != null) {\n    experience = `Up to ${job.maxYearsExperienceRequired} years`;\n  }\n\n  // Format technologies\n  const technologies = (job.technologiesUsed || [])\n    .map(t => t.value)\n    .join(', ');\n\n  // Company info\n  const co = job.company || {};\n  const companySize = co.size?.value || '';\n  const funding = co.totalFunding\n    ? `${co.totalFunding.currency} ${Math.round(parseInt(co.totalFunding.amount) / 1000000)}M`\n    : '';\n\n  // Classify\n  const remote = job.remoteOnly ? 'Yes' : 'No';\n  const status = classifyLocation(locations, job.remoteOnly);\n\n  // Build URL\n  const url = `https://app.welcometothejungle.com/jobs/${job.externalId}`;\n\n  items.push({\n    json: {\n      'Date Received': dateReceived,\n      'Company': co.name || '',\n      'Job Title': job.title || '',\n      'URL': url,\n      'Location': locations,\n      'Remote': remote,\n      'Salary': salary,\n      'Experience': experience,\n      'Technologies': technologies,\n      'Function': [job.function?.value, job.subFunction?.value].filter(Boolean).join(' \\u2192 '),\n      'Company Size': companySize,\n      'Funding': funding,\n      'Status': status,\n      'Source': 'graphql',\n      'Job ID': job.externalId,\n      'Apply URL': job.originalUrl || '',\n      'Progress': 'new',\n      'Applied': ''\n    }\n  });\n}\n\nif (items.length === 0) {\n  items.push({\n    json: {\n      'Date Received': dateReceived,\n      'Company': '⚠ NO JOBS PROCESSED',\n      'Job Title': 'All job detail fetches failed',\n      'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '',\n      'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '',\n      'Status': 'Error',\n      'Source': 'graphql',\n      'Job ID': '',\n      'Apply URL': '',\n      'Progress': '',\n      'Applied': ''\n    }\n  });\n}\n\nreturn items;"
+        "jsCode": "// Parse job details and classify \u2014 adds _isNew marker for dedup\nconst DMV_KEYWORDS = ['washington', 'dc', 'd.c.', 'district of columbia', 'maryland', 'virginia', 'arlington', 'alexandria', 'fairfax', 'reston', 'tysons', 'mclean', 'herndon', 'sterling', 'ashburn', 'leesburg', 'bethesda', 'rockville', 'silver spring', 'college park', 'columbia', 'baltimore', 'annapolis', 'dmv'];\nconst REMOTE_KEYWORDS = ['remote', 'full remote', 'full-remote', 'fully remote', 'work from home', 'wfh', 'anywhere', 'distributed'];\n\nfunction classifyLocation(locationStr, isRemote) {\n  if (isRemote) return 'Relevant';\n  if (!locationStr) return 'Skip';\n  const loc = locationStr.toLowerCase();\n  for (const kw of REMOTE_KEYWORDS) { if (loc.includes(kw)) return 'Relevant'; }\n  for (const kw of DMV_KEYWORDS) { if (loc.includes(kw)) return 'Relevant'; }\n  return 'Skip';\n}\n\nconst items = [];\nconst dateReceived = new Date().toISOString().split('T')[0];\nconst extractItems = $('Extract Job IDs').all();\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const extractItem = extractItems[i]?.json || {};\n\n  if (extractItem._error) {\n    const { _error, _isNew, externalId, ...rest } = extractItem;\n    items.push({ json: { _isNew: true, ...rest, 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n    continue;\n  }\n\n  const json = $input.all()[i].json;\n  const job = json.data?.publicJob;\n\n  if (!job) {\n    const errorMsg = json.errors ? json.errors.map(e => e.message).join('; ') : 'Job not found';\n    items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': extractItem.company || '\u26a0 FETCH ERROR', 'Job Title': extractItem.title || errorMsg, 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Status': 'Error', 'Source': 'graphql', 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n    continue;\n  }\n\n  let salary = '';\n  if (job.salaryRange) {\n    const { minAmount, maxAmount, currency } = job.salaryRange;\n    const fmt = (n) => { const num = parseInt(n); return num >= 1000 ? `${Math.round(num / 1000)}K` : num; };\n    if (minAmount && maxAmount) salary = `${currency} ${fmt(minAmount)}\u2013${fmt(maxAmount)}`;\n    else if (minAmount) salary = `${currency} ${fmt(minAmount)}+`;\n    else if (maxAmount) salary = `Up to ${currency} ${fmt(maxAmount)}`;\n  }\n\n  const locations = (job.formattedLocationPreferences || []).map(l => l.name).join(', ');\n  let experience = '';\n  if (job.minYearsExperienceRequired != null && job.maxYearsExperienceRequired != null) experience = `${job.minYearsExperienceRequired}\u2013${job.maxYearsExperienceRequired} years`;\n  else if (job.minYearsExperienceRequired != null) experience = `${job.minYearsExperienceRequired}+ years`;\n  else if (job.maxYearsExperienceRequired != null) experience = `Up to ${job.maxYearsExperienceRequired} years`;\n\n  const technologies = (job.technologiesUsed || []).map(t => t.value).join(', ');\n  const co = job.company || {};\n  const companySize = co.size?.value || '';\n  const funding = co.totalFunding ? `${co.totalFunding.currency} ${Math.round(parseInt(co.totalFunding.amount) / 1000000)}M` : '';\n  const remote = job.remoteOnly ? 'Yes' : 'No';\n  const status = classifyLocation(locations, job.remoteOnly);\n  const url = `https://app.welcometothejungle.com/jobs/${job.externalId}`;\n\n  items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': co.name || '', 'Job Title': job.title || '', 'URL': url, 'Location': locations, 'Remote': remote, 'Salary': salary, 'Experience': experience, 'Technologies': technologies, 'Function': [job.function?.value, job.subFunction?.value].filter(Boolean).join(' \u2192 '), 'Company Size': companySize, 'Funding': funding, 'Status': status, 'Source': 'graphql', 'Job ID': job.externalId, 'Apply URL': job.originalUrl || '', 'Progress': 'new', 'Applied': '' } });\n}\n\nif (items.length === 0) {\n  items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': '\u26a0 NO JOBS PROCESSED', 'Job Title': 'All job detail fetches failed', 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Status': 'Error', 'Source': 'graphql', 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n}\n\nreturn items;"
       },
       "id": "parse-classify",
       "name": "Parse & Classify",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1200, 300]
+      "position": [1200, 304]
     },
     {
       "parameters": {
-        "jsCode": "// Filter out jobs that already exist in the Google Sheet (dedup by URL)\nconst items = $input.all();\nlet existingUrls;\n\ntry {\n  const existingRows = $('Read Existing Jobs').all();\n  existingUrls = new Set(\n    existingRows.map(row => (row.json['URL'] || '').trim()).filter(u => u.length > 0)\n  );\n} catch (e) {\n  // Read failed — pass everything through (better duplicates than lost data)\n  return items;\n}\n\nconst newItems = [];\nlet skippedCount = 0;\n\nfor (const item of items) {\n  const url = (item.json['URL'] || '').trim();\n  const status = item.json['Status'] || '';\n\n  // Always pass through error/diagnostic items\n  if (!url || status === 'AUTH_EXPIRED' || status === 'Error') {\n    newItems.push(item);\n    continue;\n  }\n\n  if (existingUrls.has(url)) {\n    skippedCount++;\n    continue;\n  }\n\n  newItems.push(item);\n}\n\nif (skippedCount > 0) {\n  console.log(`Dedup: skipped ${skippedCount} duplicate(s), passing ${newItems.length} new item(s).`);\n}\n\nreturn newItems;"
+        "mode": "append",
+        "options": {}
+      },
+      "id": "merge-wait",
+      "name": "Wait for Both",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [1456, 432]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dedup using $input.all() \u2014 no cross-branch $('NodeName') references\n// Items from Parse & Classify have _isNew: true, existing sheet rows do not\n// Use String() to handle numeric values from Google Sheets (e.g. USAJobs IDs)\nconst allItems = $input.all();\n\nconst newItems = [];\nconst existingJobIds = new Set();\nconst existingUrls = new Set();\n\n// First pass: separate existing rows from new items\nfor (const item of allItems) {\n  if (item.json._isNew) {\n    newItems.push(item);\n  } else {\n    // This is an existing sheet row \u2014 use String() since sheet may return numbers\n    const jobId = String(item.json['Job ID'] ?? '').trim();\n    const url = String(item.json['URL'] ?? '').trim();\n    if (jobId) existingJobIds.add(jobId);\n    if (url) existingUrls.add(url);\n  }\n}\n\nconsole.log(`Dedup: ${newItems.length} new items, ${existingJobIds.size} existing Job IDs, ${existingUrls.size} existing URLs`);\n\n// Second pass: filter new items against existing\nconst output = [];\nlet skippedCount = 0;\n\nfor (const item of newItems) {\n  const jobId = String(item.json['Job ID'] ?? '').trim();\n  const url = String(item.json['URL'] ?? '').trim();\n  const status = item.json['Status'] || '';\n\n  // Always pass through error items\n  if (status === 'AUTH_EXPIRED' || status === 'Error') {\n    const { _isNew, _error, ...rest } = item.json;\n    output.push({ json: rest });\n    continue;\n  }\n\n  // Dedup by Job ID (primary) or URL (fallback)\n  if (jobId && existingJobIds.has(jobId)) { skippedCount++; continue; }\n  if (!jobId && url && existingUrls.has(url)) { skippedCount++; continue; }\n\n  // Remove _isNew marker before appending to sheet\n  const { _isNew, ...rest } = item.json;\n  output.push({ json: rest });\n}\n\nconsole.log(`Dedup: skipped ${skippedCount} duplicate(s), passing ${output.length} new item(s)`);\n\nreturn output;"
       },
       "id": "filter-duplicates",
       "name": "Filter Duplicates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1450, 300]
+      "position": [1712, 432]
     },
     {
       "parameters": {
@@ -158,12 +152,16 @@
         "documentId": {
           "__rl": true,
           "mode": "list",
-          "value": ""
+          "value": "1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34",
+          "cachedResultName": "WTJ Job Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34/edit?usp=drivesdk"
         },
         "sheetName": {
           "__rl": true,
           "mode": "list",
-          "value": "Sheet1"
+          "value": "gid=0",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34/edit#gid=0"
         },
         "columns": {
           "mappingMode": "autoMapInputData",
@@ -175,11 +173,11 @@
       "name": "Append to WTTJ Job Tracker",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1700, 300],
+      "position": [1952, 432],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets OAuth2 — configure in n8n UI"
+          "id": "0pHaLOuQws9nqOt4",
+          "name": "Google Sheets account"
         }
       }
     }
@@ -188,80 +186,34 @@
     "Gmail Trigger - WTTJ Alerts": {
       "main": [
         [
-          {
-            "node": "Get Recommendations",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Read Existing Jobs",
-            "type": "main",
-            "index": 0
-          }
+          { "node": "Get Recommendations", "type": "main", "index": 0 },
+          { "node": "Read Existing Jobs", "type": "main", "index": 0 }
         ]
       ]
     },
     "Get Recommendations": {
-      "main": [
-        [
-          {
-            "node": "Extract Job IDs",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[ { "node": "Extract Job IDs", "type": "main", "index": 0 } ]]
     },
     "Extract Job IDs": {
-      "main": [
-        [
-          {
-            "node": "Get Job Details",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[ { "node": "Get Job Details", "type": "main", "index": 0 } ]]
     },
     "Get Job Details": {
-      "main": [
-        [
-          {
-            "node": "Parse & Classify",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[ { "node": "Parse & Classify", "type": "main", "index": 0 } ]]
     },
     "Parse & Classify": {
-      "main": [
-        [
-          {
-            "node": "Filter Duplicates",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[ { "node": "Wait for Both", "type": "main", "index": 0 } ]]
+    },
+    "Read Existing Jobs": {
+      "main": [[ { "node": "Wait for Both", "type": "main", "index": 1 } ]]
+    },
+    "Wait for Both": {
+      "main": [[ { "node": "Filter Duplicates", "type": "main", "index": 0 } ]]
     },
     "Filter Duplicates": {
-      "main": [
-        [
-          {
-            "node": "Append to WTTJ Job Tracker",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[ { "node": "Append to WTTJ Job Tracker", "type": "main", "index": 0 } ]]
     }
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "staticData": null,
-  "tags": [],
-  "triggerCount": 1,
-  "pinData": {}
+  }
 }

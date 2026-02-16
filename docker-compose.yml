@@ -11,6 +11,8 @@ services:
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       - WTTJ_COOKIE=${WTTJ_COOKIE}
       - WTTJ_CSRF_TOKEN=${WTTJ_CSRF_TOKEN}
+      - USAJOBS_API_KEY=${USAJOBS_API_KEY}
+      - USAJOBS_EMAIL=${USAJOBS_EMAIL}
 
   n8n-mcp:
     build: ./n8n-mcp
