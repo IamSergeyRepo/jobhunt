@@ -59,10 +59,12 @@ if (profile.resumePath && !existsSync(profile.resumePath)) {
 // ── ATS fillers ────────────────────────────────────────────────────────
 import { fillGreenhouse } from './ats/greenhouse.mjs';
 import { fillLever } from './ats/lever.mjs';
+import { fillUsajobs } from './ats/usajobs.mjs';
 
 function detectATS(url) {
   if (/greenhouse\.io/i.test(url) || /boards\.greenhouse/i.test(url)) return 'greenhouse';
   if (/lever\.co/i.test(url) || /jobs\.lever/i.test(url)) return 'lever';
+  if (/usajobs\.gov/i.test(url)) return 'usajobs';
   return null;
 }
 
@@ -73,8 +75,10 @@ async function webhookPost(payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`Webhook ${res.status}: ${await res.text()}`);
-  return res.json();
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Webhook ${res.status}: ${text}`);
+  if (!text) return { success: true };
+  try { return JSON.parse(text); } catch { return { success: true }; }
 }
 
 async function getPendingJobs() {
@@ -162,6 +166,9 @@ async function main() {
       } else if (ats === 'lever') {
         console.log('    Detected: Lever');
         fillSuccess = await fillLever(page, profile);
+      } else if (ats === 'usajobs') {
+        console.log('    Detected: USAJobs');
+        fillSuccess = await fillUsajobs(page, context, profile);
       } else {
         console.log(`    Unknown ATS (${actualUrl}) — fill manually`);
       }

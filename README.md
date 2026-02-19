@@ -6,11 +6,20 @@ Automatically captures job recommendations from Welcome to the Jungle into a Goo
 
 ```
 Gmail (WTTJ alerts)
-  -> n8n v3 workflow (GraphQL API)
-     -> Get Recommendations (WTTJ GraphQL)
+  -> n8n v3 workflow (Hybrid: email + GraphQL API)
+     -> Get Email Body (parse job links from email HTML)
+     -> Get Recommendations (WTTJ GraphQL API)
+     -> Merge & Dedup job IDs from both sources
      -> Get Job Details (per job)
      -> Parse & Classify (DMV/remote = Relevant, else Skip)
-     -> Filter Duplicates (dedup by URL)
+     -> Filter Duplicates (dedup by Job ID against sheet)
+     -> Append to Google Sheet
+
+USAJobs (scheduled every 6h)
+  -> n8n workflow (REST API)
+     -> Search by title + keyword (2210 IT series, GS-12+)
+     -> Parse & Classify (DMV/remote, security clearance)
+     -> Filter Duplicates
      -> Append to Google Sheet
 
 npm run apply
@@ -18,7 +27,7 @@ npm run apply
   -> Open Chrome (persistent profile)
   -> For each job:
      -> Navigate to Apply URL
-     -> Detect ATS (Greenhouse / Lever)
+     -> Detect ATS (Greenhouse / Lever / USAJobs)
      -> Auto-fill form (name, email, phone, resume, LinkedIn)
      -> Pause for review
      -> User: submit / filled / skip / quit
@@ -42,11 +51,12 @@ npm run apply
 | Company Size | Size category |
 | Funding | Total funding amount |
 | Status | `Relevant` / `Skip` / `Error` |
-| Source | `graphql` |
-| Job ID | WTTJ `externalId` (stable key) |
-| Apply URL | Company ATS link (Greenhouse/Lever/etc.) |
+| Source | `graphql` / `email` / `recommendations` / `usajobs` |
+| Job ID | WTTJ `externalId` or USAJobs `MatchedObjectId` |
+| Apply URL | Company ATS link (Greenhouse/Lever/USAJobs/etc.) |
 | Progress | `new` / `opened` / `filled` / `submitted` / `skipped` |
 | Applied | Date string (set when submitted) |
+| Security Clearance | USAJobs only (e.g. `Not Required`, `Secret`) |
 
 ## Setup
 
@@ -114,7 +124,9 @@ npx playwright install chromium
 
 ### Capture Jobs
 
-The v3 workflow runs automatically when a WTTJ alert email arrives. It fetches full job details via the GraphQL API and classifies each job as Relevant (remote or DMV area) or Skip.
+The v3 workflow runs automatically when a WTTJ alert email arrives. It uses a hybrid approach: parsing job links from the email HTML (via SendGrid redirect resolution) and fetching recommendations via the GraphQL API, then merging and deduplicating both sources. Each job is classified as Relevant (remote or DMV area) or Skip.
+
+The USAJobs workflow runs every 6 hours, searching for IT Specialist (2210 series) positions at GS-12+ in the DMV area.
 
 ### Apply to Jobs
 
@@ -149,6 +161,7 @@ Opens Chrome to refresh WTTJ session cookies when they expire.
 |----------|-----------|-------|
 | Greenhouse (`boards.greenhouse.io`, `job-boards.greenhouse.io`) | Yes | Name, email, phone, country, resume, LinkedIn |
 | Lever (`jobs.lever.co`) | Yes | Name, email, phone, resume, LinkedIn |
+| USAJobs (`usajobs.gov`) | Partial | Clicks Apply, selects saved resume, stops at questionnaire |
 | Others (Ashby, Workday, etc.) | No | Opens the page for manual filling |
 
 ## n8n MCP Server
@@ -164,12 +177,14 @@ docker compose run --rm -T n8n-mcp
 
 | File | Purpose |
 |------|---------|
-| `n8n/wttj-to-sheets-v3.json` | v3 workflow — GraphQL API, dedup, classification |
-| `n8n/wttj-to-sheets-v2.json` | v2 workflow (deprecated) — email HTML parsing |
+| `n8n/wttj-to-sheets-v3.json` | v3 workflow — hybrid email + GraphQL, dedup, classification |
+| `n8n/wttj-to-sheets-v2.json` | v2 workflow (deprecated) — email HTML parsing only |
+| `n8n/usajobs-to-sheets.json` | USAJobs workflow — REST API, scheduled every 6h |
 | `n8n/apply-helper.json` | Apply Helper webhook workflow |
 | `scripts/apply-navigator.mjs` | Main apply orchestration script |
 | `scripts/ats/greenhouse.mjs` | Greenhouse form auto-filler |
 | `scripts/ats/lever.mjs` | Lever form auto-filler |
+| `scripts/ats/usajobs.mjs` | USAJobs application handler |
 | `scripts/ats/utils.mjs` | Shared form-filling helpers |
 | `scripts/wttj-reauth.mjs` | WTTJ session re-authentication |
 | `docker-compose.yml` | n8n + MCP server |
