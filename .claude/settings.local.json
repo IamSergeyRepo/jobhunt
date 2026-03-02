@@ -25,7 +25,13 @@
       "mcp__zapier__google_sheets_get_data_range",
       "mcp__zapier__google_sheets_api_request_beta",
       "mcp__zapier__google_sheets_lookup_spreadsheet_rows_advanced",
-      "mcp__zapier__google_sheets_copy_range"
+      "mcp__zapier__google_sheets_copy_range",
+      "WebFetch(domain:help.usajobs.gov)",
+      "mcp__zapier__google_sheets_lookup_spreadsheet_row",
+      "Bash(ls:*)",
+      "Bash(curl:*)",
+      "mcp__zapier__google_sheets_create_multiple_spreadsheet_rows",
+      "mcp__zapier__gmail_find_email"
     ]
   }
 }

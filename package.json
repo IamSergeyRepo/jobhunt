@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "reauth": "node scripts/wttj-reauth.mjs",
-    "apply": "node scripts/apply-navigator.mjs"
+    "apply": "node scripts/apply-navigator.mjs",
+    "fetch-emails": "node scripts/fetch-glorify-emails.mjs",
+    "unsubscribe": "node scripts/gmail-unsubscribe.mjs"
   },
   "dependencies": {
     "playwright": "^1.50.0"
