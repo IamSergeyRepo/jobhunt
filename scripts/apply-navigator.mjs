@@ -68,6 +68,9 @@ function detectATS(url) {
   return null;
 }
 
+// ── CLI args ────────────────────────────────────────────────────────────
+const sourceArg = process.argv.find(a => a.startsWith('--source='))?.split('=')[1] ?? 'all';
+
 // ── Webhook helpers ────────────────────────────────────────────────────
 async function webhookPost(payload) {
   const res = await fetch(`${WEBHOOK_URL}/apply-helper`, {
@@ -82,11 +85,11 @@ async function webhookPost(payload) {
 }
 
 async function getPendingJobs() {
-  return webhookPost({ action: 'get-pending' });
+  return webhookPost({ action: 'get-pending', source: sourceArg });
 }
 
-async function updateProgress(jobId, progress, applied = '') {
-  return webhookPost({ action: 'update-progress', jobId, progress, applied });
+async function updateProgress(jobId, progress, applied = '', source = 'wttj') {
+  return webhookPost({ action: 'update-progress', jobId, progress, applied, source });
 }
 
 // ── Interactive prompt ─────────────────────────────────────────────────
@@ -102,7 +105,8 @@ function prompt(question) {
 
 // ── Main ───────────────────────────────────────────────────────────────
 async function main() {
-  console.log('Apply Navigator\n');
+  const sourceLabel = sourceArg === 'all' ? 'all sources' : sourceArg;
+  console.log(`Apply Navigator [${sourceLabel}]\n`);
 
   // Fetch pending jobs
   let data;
@@ -122,7 +126,7 @@ async function main() {
 
   console.log(`Found ${jobs.length} pending job(s):\n`);
   for (const job of jobs) {
-    console.log(`  ${job.company} — ${job.jobTitle}`);
+    console.log(`  [${job.source}] ${job.company} — ${job.jobTitle}`);
   }
   console.log();
 
@@ -144,7 +148,7 @@ async function main() {
   for (let i = 0; i < jobs.length && !quit; i++) {
     const job = jobs[i];
     const idx = `[${i + 1}/${jobs.length}]`;
-    console.log(`\n${idx} ${job.company} — ${job.jobTitle}`);
+    console.log(`\n${idx} [${job.source}] ${job.company} — ${job.jobTitle}`);
     console.log(`    Apply URL: ${job.applyUrl}`);
 
     const page = await context.newPage();
@@ -187,11 +191,11 @@ async function main() {
         quit = true;
         // Still update progress for this job as opened
         try {
-          await updateProgress(job.jobId, 'opened');
+          await updateProgress(job.jobId, 'opened', '', job.source);
         } catch { /* ignore */ }
       } else if (answer === 'skip') {
         try {
-          await updateProgress(job.jobId, 'skipped');
+          await updateProgress(job.jobId, 'skipped', '', job.source);
           console.log('    -> Skipped');
           summary.skipped++;
         } catch (err) {
@@ -200,7 +204,7 @@ async function main() {
         }
       } else if (answer === 'filled' || answer === 'f') {
         try {
-          await updateProgress(job.jobId, 'filled');
+          await updateProgress(job.jobId, 'filled', '', job.source);
           console.log('    -> Marked as filled');
           summary.filled++;
         } catch (err) {
@@ -211,7 +215,7 @@ async function main() {
         // Default (Enter): mark as submitted
         const today = new Date().toISOString().split('T')[0];
         try {
-          await updateProgress(job.jobId, 'submitted', today);
+          await updateProgress(job.jobId, 'submitted', today, job.source);
           console.log('    -> Marked as submitted');
           summary.submitted++;
         } catch (err) {

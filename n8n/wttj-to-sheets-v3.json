@@ -156,10 +156,8 @@
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "gid=0",
-          "cachedResultName": "Sheet1",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34/edit#gid=0"
+          "mode": "name",
+          "value": "WTTJ"
         },
         "options": {}
       },
@@ -208,10 +206,8 @@
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "gid=0",
-          "cachedResultName": "Sheet1",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34/edit#gid=0"
+          "mode": "name",
+          "value": "WTTJ"
         },
         "columns": {
           "mappingMode": "autoMapInputData",

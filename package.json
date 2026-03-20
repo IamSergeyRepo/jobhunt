@@ -5,6 +5,9 @@
   "scripts": {
     "reauth": "node scripts/wttj-reauth.mjs",
     "apply": "node scripts/apply-navigator.mjs",
+    "apply:wttj": "node scripts/apply-navigator.mjs --source=wttj",
+    "apply:usajobs": "node scripts/apply-navigator.mjs --source=usajobs",
+    "apply:all": "node scripts/apply-navigator.mjs --source=all",
     "fetch-emails": "node scripts/fetch-glorify-emails.mjs",
     "unsubscribe": "node scripts/gmail-unsubscribe.mjs"
   },

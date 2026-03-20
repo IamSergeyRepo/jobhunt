@@ -25,16 +25,16 @@
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Sheet1"
+          "mode": "name",
+          "value": "WTTJ"
         },
         "options": {}
       },
-      "id": "read-sheet",
-      "name": "Read Sheet",
+      "id": "read-wttj-sheet",
+      "name": "Read WTTJ Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [450, 300],
+      "position": [450, 150],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "",
@@ -44,13 +44,48 @@
     },
     {
       "parameters": {
-        "jsCode": "const webhookJson = $('Webhook').first().json;\nconst body = webhookJson.body || webhookJson;\nconst action = body.action;\n\nif (action !== 'get-pending') return [];\n\nconst allRows = $input.all();\n\nconst pending = allRows.filter(row => {\n  const j = row.json;\n  return j['Status'] === 'Relevant'\n    && (j['Progress'] === 'new' || !j['Progress'])\n    && j['Apply URL'] && j['Apply URL'].trim() !== '';\n});\n\nconst jobs = pending.map(row => ({\n  jobId: row.json['Job ID'] || '',\n  company: row.json['Company'] || '',\n  jobTitle: row.json['Job Title'] || '',\n  url: row.json['URL'] || '',\n  applyUrl: row.json['Apply URL'] || '',\n  location: row.json['Location'] || '',\n  salary: row.json['Salary'] || ''\n}));\n\nreturn [{ json: { jobs, count: jobs.length } }];"
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "USAJobs"
+        },
+        "options": {}
+      },
+      "id": "read-usajobs-sheet",
+      "name": "Read USAJobs Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [450, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 — configure in n8n UI"
+        }
+      }
+    },
+    {
+      "parameters": { "mode": "append", "options": {} },
+      "id": "merge-sheets",
+      "name": "Merge Sheets",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [700, 270]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookJson = $('Webhook').first().json;\nconst body = webhookJson.body || webhookJson;\nconst action = body.action;\nconst sourceFilter = body.source || 'all';\n\nif (action !== 'get-pending') return [];\n\nconst allRows = $input.all();\n\nconst pending = allRows.filter(row => {\n  const j = row.json;\n  if (j['Status'] !== 'Relevant') return false;\n  if (j['Progress'] !== 'new' && j['Progress']) return false;\n  if (!j['Apply URL'] || !j['Apply URL'].trim()) return false;\n\n  // Source filtering\n  if (sourceFilter !== 'all') {\n    const rowSource = String(j['Source'] ?? '').toLowerCase();\n    const isUsajobs = rowSource === 'usajobs';\n    if (sourceFilter === 'usajobs' && !isUsajobs) return false;\n    if (sourceFilter === 'wttj' && isUsajobs) return false;\n  }\n  return true;\n});\n\nconst jobs = pending.map(row => {\n  const j = row.json;\n  const rowSource = String(j['Source'] ?? '').toLowerCase();\n  const source = rowSource === 'usajobs' ? 'usajobs' : 'wttj';\n  return {\n    jobId: j['Job ID'] || '',\n    company: j['Company'] || '',\n    jobTitle: j['Job Title'] || '',\n    url: j['URL'] || '',\n    applyUrl: j['Apply URL'] || '',\n    location: j['Location'] || '',\n    salary: j['Salary'] || '',\n    source\n  };\n});\n\nreturn [{ json: { jobs, count: jobs.length } }];"
       },
       "id": "filter-pending",
       "name": "Filter Pending",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [760, 208]
+      "position": [950, 270]
     },
     {
       "parameters": {
@@ -64,17 +99,35 @@
       "name": "Respond Pending",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1000, 208]
+      "position": [1200, 270]
     },
     {
       "parameters": {
-        "jsCode": "const webhookJson = $('Webhook').first().json;\nconst body = webhookJson.body || webhookJson;\nconst action = body.action;\n\nif (action !== 'update-progress') return [];\n\nreturn [{\n  json: {\n    'Job ID': body.jobId,\n    'Progress': body.progress,\n    'Applied': body.applied || ''\n  }\n}];"
+        "jsCode": "const webhookJson = $('Webhook').first().json;\nconst body = webhookJson.body || webhookJson;\nconst action = body.action;\n\nif (action !== 'update-progress') return [];\n\nreturn [{\n  json: {\n    'Job ID': body.jobId,\n    'Progress': body.progress,\n    'Applied': body.applied || '',\n    'source': body.source || 'wttj'\n  }\n}];"
       },
       "id": "prepare-update",
       "name": "Prepare Update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [760, 400]
+      "position": [450, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.source }}",
+              "operation": "equals",
+              "value2": "usajobs"
+            }
+          ]
+        }
+      },
+      "id": "if-source",
+      "name": "If USAJobs",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [700, 600]
     },
     {
       "parameters": {
@@ -86,8 +139,8 @@
         },
         "sheetName": {
           "__rl": true,
-          "mode": "list",
-          "value": "Sheet1"
+          "mode": "name",
+          "value": "USAJobs"
         },
         "columns": {
           "mappingMode": "defineBelow",
@@ -105,11 +158,52 @@
         },
         "options": {}
       },
-      "id": "update-sheet",
-      "name": "Update Sheet",
+      "id": "update-usajobs-sheet",
+      "name": "Update USAJobs Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1000, 400],
+      "position": [950, 500],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2 — configure in n8n UI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "WTTJ"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Job ID": "={{ $json['Job ID'] }}",
+            "Progress": "={{ $json['Progress'] }}",
+            "Applied": "={{ $json['Applied'] }}"
+          },
+          "matchingColumns": ["Job ID"],
+          "schema": [
+            { "id": "Job ID", "displayName": "Job ID", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Progress", "displayName": "Progress", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
+            { "id": "Applied", "displayName": "Applied", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-wttj-sheet",
+      "name": "Update WTTJ Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [950, 700],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "",
@@ -129,21 +223,32 @@
       "name": "Respond Update",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1250, 400]
+      "position": [1200, 600]
     }
   ],
   "connections": {
     "Webhook": {
       "main": [
-        [{ "node": "Read Sheet", "type": "main", "index": 0 }]
-      ]
-    },
-    "Read Sheet": {
-      "main": [
         [
-          { "node": "Filter Pending", "type": "main", "index": 0 },
+          { "node": "Read WTTJ Sheet", "type": "main", "index": 0 },
+          { "node": "Read USAJobs Sheet", "type": "main", "index": 0 },
           { "node": "Prepare Update", "type": "main", "index": 0 }
         ]
+      ]
+    },
+    "Read WTTJ Sheet": {
+      "main": [
+        [{ "node": "Merge Sheets", "type": "main", "index": 0 }]
+      ]
+    },
+    "Read USAJobs Sheet": {
+      "main": [
+        [{ "node": "Merge Sheets", "type": "main", "index": 1 }]
+      ]
+    },
+    "Merge Sheets": {
+      "main": [
+        [{ "node": "Filter Pending", "type": "main", "index": 0 }]
       ]
     },
     "Filter Pending": {
@@ -153,10 +258,21 @@
     },
     "Prepare Update": {
       "main": [
-        [{ "node": "Update Sheet", "type": "main", "index": 0 }]
+        [{ "node": "If USAJobs", "type": "main", "index": 0 }]
       ]
     },
-    "Update Sheet": {
+    "If USAJobs": {
+      "main": [
+        [{ "node": "Update USAJobs Sheet", "type": "main", "index": 0 }],
+        [{ "node": "Update WTTJ Sheet", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update USAJobs Sheet": {
+      "main": [
+        [{ "node": "Respond Update", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update WTTJ Sheet": {
       "main": [
         [{ "node": "Respond Update", "type": "main", "index": 0 }]
       ]
