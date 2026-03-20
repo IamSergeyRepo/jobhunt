@@ -21,7 +21,8 @@
         "documentId": {
           "__rl": true,
           "mode": "list",
-          "value": ""
+          "value": "1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34",
+          "cachedResultName": "WTJ Job Tracker"
         },
         "sheetName": {
           "__rl": true,
@@ -37,8 +38,8 @@
       "position": [450, 150],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets OAuth2 — configure in n8n UI"
+          "id": "0pHaLOuQws9nqOt4",
+          "name": "Google Sheets account"
         }
       }
     },
@@ -48,7 +49,8 @@
         "documentId": {
           "__rl": true,
           "mode": "list",
-          "value": ""
+          "value": "1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34",
+          "cachedResultName": "WTJ Job Tracker"
         },
         "sheetName": {
           "__rl": true,
@@ -64,8 +66,8 @@
       "position": [450, 400],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets OAuth2 — configure in n8n UI"
+          "id": "0pHaLOuQws9nqOt4",
+          "name": "Google Sheets account"
         }
       }
     },
@@ -135,7 +137,8 @@
         "documentId": {
           "__rl": true,
           "mode": "list",
-          "value": ""
+          "value": "1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34",
+          "cachedResultName": "WTJ Job Tracker"
         },
         "sheetName": {
           "__rl": true,
@@ -165,8 +168,8 @@
       "position": [950, 500],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets OAuth2 — configure in n8n UI"
+          "id": "0pHaLOuQws9nqOt4",
+          "name": "Google Sheets account"
         }
       }
     },
@@ -176,7 +179,8 @@
         "documentId": {
           "__rl": true,
           "mode": "list",
-          "value": ""
+          "value": "1n7KDTMLHbSgUEue6HFXFLm8NA8NKibA-LRiBk8blI34",
+          "cachedResultName": "WTJ Job Tracker"
         },
         "sheetName": {
           "__rl": true,
@@ -206,8 +210,8 @@
       "position": [950, 700],
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "",
-          "name": "Google Sheets OAuth2 — configure in n8n UI"
+          "id": "0pHaLOuQws9nqOt4",
+          "name": "Google Sheets account"
         }
       }
     },
