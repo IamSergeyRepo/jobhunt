@@ -8,12 +8,18 @@ Automatically captures job recommendations from Welcome to the Jungle into a Goo
 Gmail (WTTJ alerts)
   -> n8n v3 workflow (Hybrid: email + GraphQL API)
      -> Get Email Body (parse job links from email HTML)
-     -> Get Recommendations (WTTJ GraphQL API)
+        -> resolve SendGrid redirect to final WTTJ URL (redirect: follow + res.url)
+     -> Get Recommendations (WTTJ GraphQL API, requires session cookies)
+        -> if currentUser: null → _skip + email alert (auth expired)
      -> Merge & Dedup job IDs from both sources
-     -> Get Job Details (per job)
+     -> Get Job Details (publicJob API, no auth required)
      -> Parse & Classify (DMV/remote = Relevant, else Skip)
      -> Filter Duplicates (dedup by Job ID against sheet)
      -> Append to Google Sheet
+
+WTTJ Health Check (daily 9am)
+  -> Check WTTJ Auth (GraphQL currentUser)
+  -> If expired → Send Gmail alert to run npm run reauth
 
 USAJobs (scheduled every 6h)
   -> n8n workflow (REST API)
@@ -177,7 +183,8 @@ docker compose run --rm -T n8n-mcp
 
 | File | Purpose |
 |------|---------|
-| `n8n/wttj-to-sheets-v3.json` | v3 workflow — hybrid email + GraphQL, dedup, classification |
+| `n8n/wttj-to-sheets-v3.json` | v3 workflow — hybrid email + GraphQL, dedup, classification, auth alert |
+| `n8n/wttj-health-check.json` | Daily auth health check — emails alert when WTTJ cookies expire |
 | `n8n/wttj-to-sheets-v2.json` | v2 workflow (deprecated) — email HTML parsing only |
 | `n8n/usajobs-to-sheets.json` | USAJobs workflow — REST API, scheduled every 6h |
 | `n8n/apply-helper.json` | Apply Helper webhook workflow |
@@ -198,4 +205,5 @@ docker compose run --rm -T n8n-mcp
 - **"ProcessSingleton" error** — A previous Chrome session is still running. Kill it: `pkill -f "Google Chrome for Testing"`
 - **Phone country code issues** — The script auto-selects US (+1) for phone numbers starting with `+1`.
 - **Google API errors** — Ensure Gmail API, Google Sheets API, and Google Drive API are enabled.
-- **WTTJ auth expired** — Run `npm run reauth` to refresh session cookies.
+- **WTTJ auth expired** — Run `npm run reauth` to refresh session cookies. The health check workflow emails you automatically every morning at 9am if expired.
+- **Jobs missing from email** — The Gmail trigger won't reprocess already-seen emails. The recommendations branch only shows jobs currently in your WTTJ feed. For one-off recovery, use the `scripts/add-jobs.mjs` approach (fetches via publicJob API, writes directly to Sheets using stored OAuth token).

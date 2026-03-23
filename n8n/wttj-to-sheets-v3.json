@@ -1,5 +1,5 @@
 {
-  "name": "WTTJ Job Alerts \u2192 Google Sheets v3 (Hybrid)",
+  "name": "WTTJ Job Alerts → Google Sheets v3 (Hybrid)",
   "nodes": [
     {
       "parameters": {
@@ -20,7 +20,10 @@
       "name": "Gmail Trigger - WTTJ Alerts",
       "type": "n8n-nodes-base.gmailTrigger",
       "typeVersion": 1.2,
-      "position": [200, 400],
+      "position": [
+        200,
+        400
+      ],
       "credentials": {
         "gmailOAuth2": {
           "id": "W37w2VUS9ryGJWRq",
@@ -40,7 +43,10 @@
       "name": "Get Email Body",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [450, 200],
+      "position": [
+        450,
+        200
+      ],
       "credentials": {
         "gmailOAuth2": {
           "id": "W37w2VUS9ryGJWRq",
@@ -50,13 +56,16 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract job IDs from WTTJ email by parsing HTML and following SendGrid redirects\nconst data = $input.first()?.json || {};\nconst dateReceived = new Date().toISOString().split('T')[0];\n\n// Recursively search for text/html part in multipart messages\nfunction findHtmlPart(parts) {\n  if (!parts || !parts.length) return null;\n  for (const part of parts) {\n    if (part.mimeType === 'text/html' && part.body?.data) {\n      return part.body.data;\n    }\n    // Recurse into nested multipart (e.g. multipart/alternative inside multipart/mixed)\n    if (part.parts) {\n      const found = findHtmlPart(part.parts);\n      if (found) return found;\n    }\n  }\n  return null;\n}\n\n// Try multiple ways to get HTML body from Gmail node output\nlet html = '';\n\n// simple:true output (v2+)\nif (data.textHtml) {\n  html = data.textHtml;\n}\n// simple:false output — base64 in payload.parts or payload.body (recursive)\n// Gmail API uses URL-safe base64 (- and _ instead of + and /), use 'base64url'\nelse if (data.payload) {\n  const b64 = findHtmlPart(data.payload.parts || []);\n  if (b64) {\n    html = Buffer.from(b64, 'base64url').toString('utf8');\n  }\n  // Fallback: single-part message\n  if (!html && data.payload.body?.data) {\n    html = Buffer.from(data.payload.body.data, 'base64url').toString('utf8');\n  }\n}\n// Direct html field\nelse if (data.html) {\n  html = data.html;\n}\n\nconsole.log(`Gmail output keys: ${Object.keys(data).join(', ')}`);\nconsole.log(`HTML body length: ${html.length}`);\nif (data.payload) {\n  const topParts = (data.payload.parts || []).map(p => p.mimeType);\n  console.log(`Payload mimeType: ${data.payload.mimeType}, parts: [${topParts.join(', ')}]`);\n}\n\nif (!html) {\n  console.log('No HTML body found in email');\n  return [{ json: { _skip: true } }];\n}\n\n// Extract URLs from <a href> tags that wrap greyHover blocks (WTTJ job card pattern)\n// The job link <a href> precedes the <tbody class=\"greyHover\"> it wraps — NOT inside it\nconst linkPattern = /<a[^>]+href=\"(https?:\\/\\/[^\"]+)\"[^>]*>/gi;\nconst seenUrls = new Set();\nconst urls = [];\nlet m;\nwhile ((m = linkPattern.exec(html)) !== null) {\n  const url = m[1].replace(/&amp;/g, '&');\n  if (seenUrls.has(url)) continue;\n  const after = html.slice(m.index, m.index + 2000);\n  if (/class=\"greyHover\"/.test(after)) {\n    seenUrls.add(url);\n    urls.push(url);\n  }\n}\n\nif (urls.length === 0) {\n  console.log('No job links found in email HTML');\n  return [{ json: { _skip: true } }];\n}\n\nconsole.log(`Found ${urls.length} job link(s) in email, resolving redirects...`);\n\nconst items = [];\nfor (const url of urls) {\n  try {\n    let currentUrl = url;\n    for (let hop = 0; hop < 5; hop++) {\n      const res = await fetch(currentUrl, { redirect: 'manual' });\n      const location = res.headers.get('location');\n      if (!location) break;\n      currentUrl = location;\n      if (/\\/jobs\\//.test(currentUrl)) break;\n    }\n    const idMatch = currentUrl.match(/\\/jobs\\/([^/?#]+)/);\n    if (idMatch) {\n      items.push({ json: { _isNew: true, externalId: idMatch[1], source: 'email', dateReceived } });\n      console.log(`  \\u2192 ${idMatch[1]}`);\n    } else {\n      console.log(`  \\u2192 Could not extract ID from: ${currentUrl}`);\n    }\n  } catch (e) {\n    console.log(`  \\u2192 Error: ${e.message}`);\n  }\n}\n\nreturn items.length > 0 ? items : [{ json: { _skip: true } }];"
+        "jsCode": "// Extract job IDs from WTTJ email by parsing HTML and following SendGrid redirects\nconst data = $input.first()?.json || {};\nconst dateReceived = new Date().toISOString().split('T')[0];\n\nfunction findHtmlPart(parts) {\n  if (!parts || !parts.length) return null;\n  for (const part of parts) {\n    if (part.mimeType === 'text/html' && part.body?.data) return part.body.data;\n    if (part.parts) { const found = findHtmlPart(part.parts); if (found) return found; }\n  }\n  return null;\n}\n\nlet html = '';\nif (data.textHtml) { html = data.textHtml; }\nelse if (data.payload) {\n  const b64 = findHtmlPart(data.payload.parts || []);\n  if (b64) html = Buffer.from(b64, 'base64url').toString('utf8');\n  if (!html && data.payload.body?.data) html = Buffer.from(data.payload.body.data, 'base64url').toString('utf8');\n}\nelse if (data.html) { html = data.html; }\n\nconsole.log(`Gmail output keys: ${Object.keys(data).join(', ')}`);\nconsole.log(`HTML body length: ${html.length}`);\nif (data.payload) {\n  const topParts = (data.payload.parts || []).map(p => p.mimeType);\n  console.log(`Payload mimeType: ${data.payload.mimeType}, parts: [${topParts.join(', ')}]`);\n}\n\nif (!html) { console.log('No HTML body found in email'); return [{ json: { _skip: true } }]; }\n\nconst linkPattern = /<a[^>]+href=\"(https?:\\/\\/[^\"]+)\"[^>]*>/gi;\nconst seenUrls = new Set();\nconst urls = [];\nlet m;\nwhile ((m = linkPattern.exec(html)) !== null) {\n  const url = m[1].replace(/&amp;/g, '&');\n  if (seenUrls.has(url)) continue;\n  const after = html.slice(m.index, m.index + 2000);\n  if (/class=\"greyHover\"/.test(after)) { seenUrls.add(url); urls.push(url); }\n}\n\nif (urls.length === 0) { console.log('No job links found in email HTML'); return [{ json: { _skip: true } }]; }\n\nconsole.log(`Found ${urls.length} job link(s) in email, resolving redirects...`);\n\nconst items = [];\nfor (const url of urls) {\n  try {\n    const res = await fetch(url, { redirect: 'follow' });\n    const finalUrl = res.url;\n    const idMatch = finalUrl.match(/\\/jobs\\/([^/?#]+)/);\n    if (idMatch) { items.push({ json: { _isNew: true, externalId: idMatch[1], source: 'email', dateReceived } }); console.log(`  \\u2192 ${idMatch[1]}`); }\n    else { console.log(`  \\u2192 Could not extract ID from: ${finalUrl}`); }\n  } catch (e) { console.log(`  \\u2192 Error: ${e.message}`); }\n}\n\nreturn items.length > 0 ? items : [{ json: { _skip: true } }];"
       },
       "id": "extract-email-ids",
       "name": "Extract Email Job IDs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [700, 200]
+      "position": [
+        700,
+        200
+      ]
     },
     {
       "parameters": {
@@ -65,9 +74,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Cookie", "value": "={{ $env.WTTJ_COOKIE }}" },
-            { "name": "x-csrf-token", "value": "={{ $env.WTTJ_CSRF_TOKEN }}" },
-            { "name": "origin", "value": "https://app.welcometothejungle.com" }
+            {
+              "name": "Cookie",
+              "value": "={{ $env.WTTJ_COOKIE }}"
+            },
+            {
+              "name": "x-csrf-token",
+              "value": "={{ $env.WTTJ_CSRF_TOKEN }}"
+            },
+            {
+              "name": "origin",
+              "value": "https://app.welcometothejungle.com"
+            }
           ]
         },
         "sendBody": true,
@@ -79,17 +97,23 @@
       "name": "Get Recommendations",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [450, 400]
+      "position": [
+        450,
+        400
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Extract job IDs from JobRecommendations GraphQL response\nconst json = $input.first().json;\nconst dateReceived = new Date().toISOString().split('T')[0];\n\nconst currentUser = json.data?.currentUser;\nif (!currentUser) {\n  console.log('Auth expired or invalid response');\n  return [{ json: {\n    _isNew: true, _error: true, externalId: '__AUTH_EXPIRED__',\n    'Date Received': dateReceived,\n    'Company': '\\u26a0 AUTH EXPIRED',\n    'Job Title': 'WTTJ session cookies need refresh \\u2014 run: npm run reauth',\n    'URL': '', 'Location': '', 'Remote': '', 'Salary': '',\n    'Experience': '', 'Technologies': '', 'Function': '',\n    'Company Size': '', 'Funding': '',\n    'Status': 'AUTH_EXPIRED', 'Source': 'graphql',\n    'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': ''\n  } }];\n}\n\nconst recs = currentUser.jobRecommendations || [];\nif (recs.length === 0) {\n  console.log('No recommendations returned');\n  return [{ json: { _skip: true } }];\n}\n\nconst items = recs.map(rec => ({\n  json: {\n    _isNew: true,\n    externalId: rec.job.externalId,\n    company: rec.job.company?.name || '',\n    title: rec.job.title || '',\n    source: 'recommendations',\n    dateReceived\n  }\n}));\n\nconsole.log(`Extracted ${items.length} recommendation(s)`);\nreturn items;"
+        "jsCode": "const json = $input.first().json;\nconst dateReceived = new Date().toISOString().split('T')[0];\n\nconst currentUser = json.data?.currentUser;\nif (!currentUser) {\n  console.log('Auth expired \\u2014 skipping recommendations');\n  return [{ json: { _skip: true, _authExpired: true } }];\n}\n\nconst recs = currentUser.jobRecommendations || [];\nif (recs.length === 0) { console.log('No recommendations returned'); return [{ json: { _skip: true } }]; }\n\nconst items = recs.map(rec => ({ json: { _isNew: true, externalId: rec.job.externalId, company: rec.job.company?.name || '', title: rec.job.title || '', source: 'recommendations', dateReceived } }));\nconsole.log(`Extracted ${items.length} recommendation(s)`);\nreturn items;"
       },
       "id": "extract-rec-ids",
       "name": "Extract Rec IDs",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [700, 400]
+      "position": [
+        700,
+        400
+      ]
     },
     {
       "parameters": {
@@ -99,7 +123,10 @@
       "name": "Merge Job IDs",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.1,
-      "position": [950, 300]
+      "position": [
+        950,
+        300
+      ]
     },
     {
       "parameters": {
@@ -109,7 +136,10 @@
       "name": "Dedup & Filter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1150, 300]
+      "position": [
+        1150,
+        300
+      ]
     },
     {
       "parameters": {
@@ -118,9 +148,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Cookie", "value": "={{ $env.WTTJ_COOKIE }}" },
-            { "name": "x-csrf-token", "value": "={{ $env.WTTJ_CSRF_TOKEN }}" },
-            { "name": "origin", "value": "https://app.welcometothejungle.com" }
+            {
+              "name": "Cookie",
+              "value": "={{ $env.WTTJ_COOKIE }}"
+            },
+            {
+              "name": "x-csrf-token",
+              "value": "={{ $env.WTTJ_CSRF_TOKEN }}"
+            },
+            {
+              "name": "origin",
+              "value": "https://app.welcometothejungle.com"
+            }
           ]
         },
         "sendBody": true,
@@ -132,17 +171,23 @@
       "name": "Get Job Details",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1350, 300]
+      "position": [
+        1350,
+        300
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Parse job details and classify \u2014 adds _isNew marker for dedup\nconst DMV_KEYWORDS = ['washington', 'dc', 'd.c.', 'district of columbia', 'maryland', 'virginia', 'arlington', 'alexandria', 'fairfax', 'reston', 'tysons', 'mclean', 'herndon', 'sterling', 'ashburn', 'leesburg', 'bethesda', 'rockville', 'silver spring', 'college park', 'columbia', 'baltimore', 'annapolis', 'dmv'];\nconst REMOTE_KEYWORDS = ['remote', 'full remote', 'full-remote', 'fully remote', 'work from home', 'wfh', 'anywhere', 'distributed'];\n\nfunction classifyLocation(locationStr, isRemote) {\n  if (isRemote) return 'Relevant';\n  if (!locationStr) return 'Skip';\n  const loc = locationStr.toLowerCase();\n  for (const kw of REMOTE_KEYWORDS) { if (loc.includes(kw)) return 'Relevant'; }\n  for (const kw of DMV_KEYWORDS) { if (loc.includes(kw)) return 'Relevant'; }\n  return 'Skip';\n}\n\nconst items = [];\nconst dateReceived = new Date().toISOString().split('T')[0];\nconst dedupItems = $('Dedup & Filter').all();\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const dedupItem = dedupItems[i]?.json || {};\n\n  if (dedupItem._error) {\n    const { _error, _isNew, externalId, ...rest } = dedupItem;\n    items.push({ json: { _isNew: true, ...rest, 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n    continue;\n  }\n\n  const json = $input.all()[i].json;\n  const job = json.data?.publicJob;\n\n  if (!job) {\n    const errorMsg = json.errors ? json.errors.map(e => e.message).join('; ') : 'Job not found';\n    items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': dedupItem.company || '\\u26a0 FETCH ERROR', 'Job Title': dedupItem.title || errorMsg, 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Status': 'Error', 'Source': dedupItem.source || 'hybrid', 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n    continue;\n  }\n\n  let salary = '';\n  if (job.salaryRange) {\n    const { minAmount, maxAmount, currency } = job.salaryRange;\n    const fmt = (n) => { const num = parseInt(n); return num >= 1000 ? `${Math.round(num / 1000)}K` : num; };\n    if (minAmount && maxAmount) salary = `${currency} ${fmt(minAmount)}\\u2013${fmt(maxAmount)}`;\n    else if (minAmount) salary = `${currency} ${fmt(minAmount)}+`;\n    else if (maxAmount) salary = `Up to ${currency} ${fmt(maxAmount)}`;\n  }\n\n  const locations = (job.formattedLocationPreferences || []).map(l => l.name).join(', ');\n  let experience = '';\n  if (job.minYearsExperienceRequired != null && job.maxYearsExperienceRequired != null) experience = `${job.minYearsExperienceRequired}\\u2013${job.maxYearsExperienceRequired} years`;\n  else if (job.minYearsExperienceRequired != null) experience = `${job.minYearsExperienceRequired}+ years`;\n  else if (job.maxYearsExperienceRequired != null) experience = `Up to ${job.maxYearsExperienceRequired} years`;\n\n  const technologies = (job.technologiesUsed || []).map(t => t.value).join(', ');\n  const co = job.company || {};\n  const companySize = co.size?.value || '';\n  const funding = co.totalFunding ? `${co.totalFunding.currency} ${Math.round(parseInt(co.totalFunding.amount) / 1000000)}M` : '';\n  const remote = job.remoteOnly ? 'Yes' : 'No';\n  const status = classifyLocation(locations, job.remoteOnly);\n  const url = `https://app.welcometothejungle.com/jobs/${job.externalId}`;\n  const source = dedupItem.source || 'hybrid';\n\n  items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': co.name || '', 'Job Title': job.title || '', 'URL': url, 'Location': locations, 'Remote': remote, 'Salary': salary, 'Experience': experience, 'Technologies': technologies, 'Function': [job.function?.value, job.subFunction?.value].filter(Boolean).join(' \\u2192 '), 'Company Size': companySize, 'Funding': funding, 'Status': status, 'Source': source, 'Job ID': job.externalId, 'Apply URL': job.originalUrl || '', 'Progress': 'new', 'Applied': '' } });\n}\n\nif (items.length === 0) {\n  items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': '\\u26a0 NO JOBS PROCESSED', 'Job Title': 'All job detail fetches failed', 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Status': 'Error', 'Source': 'hybrid', 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n}\n\nreturn items;"
+        "jsCode": "// Parse job details and classify — adds _isNew marker for dedup\nconst DMV_KEYWORDS = ['washington', 'dc', 'd.c.', 'district of columbia', 'maryland', 'virginia', 'arlington', 'alexandria', 'fairfax', 'reston', 'tysons', 'mclean', 'herndon', 'sterling', 'ashburn', 'leesburg', 'bethesda', 'rockville', 'silver spring', 'college park', 'columbia', 'baltimore', 'annapolis', 'dmv'];\nconst REMOTE_KEYWORDS = ['remote', 'full remote', 'full-remote', 'fully remote', 'work from home', 'wfh', 'anywhere', 'distributed'];\n\nfunction classifyLocation(locationStr, isRemote) {\n  if (isRemote) return 'Relevant';\n  if (!locationStr) return 'Skip';\n  const loc = locationStr.toLowerCase();\n  for (const kw of REMOTE_KEYWORDS) { if (loc.includes(kw)) return 'Relevant'; }\n  for (const kw of DMV_KEYWORDS) { if (loc.includes(kw)) return 'Relevant'; }\n  return 'Skip';\n}\n\nconst items = [];\nconst dateReceived = new Date().toISOString().split('T')[0];\nconst dedupItems = $('Dedup & Filter').all();\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const dedupItem = dedupItems[i]?.json || {};\n\n  if (dedupItem._error) {\n    const { _error, _isNew, externalId, ...rest } = dedupItem;\n    items.push({ json: { _isNew: true, ...rest, 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n    continue;\n  }\n\n  const json = $input.all()[i].json;\n  const job = json.data?.publicJob;\n\n  if (!job) {\n    const errorMsg = json.errors ? json.errors.map(e => e.message).join('; ') : 'Job not found';\n    items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': dedupItem.company || '\\u26a0 FETCH ERROR', 'Job Title': dedupItem.title || errorMsg, 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Status': 'Error', 'Source': dedupItem.source || 'hybrid', 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n    continue;\n  }\n\n  let salary = '';\n  if (job.salaryRange) {\n    const { minAmount, maxAmount, currency } = job.salaryRange;\n    const fmt = (n) => { const num = parseInt(n); return num >= 1000 ? `${Math.round(num / 1000)}K` : num; };\n    if (minAmount && maxAmount) salary = `${currency} ${fmt(minAmount)}\\u2013${fmt(maxAmount)}`;\n    else if (minAmount) salary = `${currency} ${fmt(minAmount)}+`;\n    else if (maxAmount) salary = `Up to ${currency} ${fmt(maxAmount)}`;\n  }\n\n  const locations = (job.formattedLocationPreferences || []).map(l => l.name).join(', ');\n  let experience = '';\n  if (job.minYearsExperienceRequired != null && job.maxYearsExperienceRequired != null) experience = `${job.minYearsExperienceRequired}\\u2013${job.maxYearsExperienceRequired} years`;\n  else if (job.minYearsExperienceRequired != null) experience = `${job.minYearsExperienceRequired}+ years`;\n  else if (job.maxYearsExperienceRequired != null) experience = `Up to ${job.maxYearsExperienceRequired} years`;\n\n  const technologies = (job.technologiesUsed || []).map(t => t.value).join(', ');\n  const co = job.company || {};\n  const companySize = co.size?.value || '';\n  const funding = co.totalFunding ? `${co.totalFunding.currency} ${Math.round(parseInt(co.totalFunding.amount) / 1000000)}M` : '';\n  const remote = job.remoteOnly ? 'Yes' : 'No';\n  const status = classifyLocation(locations, job.remoteOnly);\n  const url = `https://app.welcometothejungle.com/jobs/${job.externalId}`;\n  const source = dedupItem.source || 'hybrid';\n\n  items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': co.name || '', 'Job Title': job.title || '', 'URL': url, 'Location': locations, 'Remote': remote, 'Salary': salary, 'Experience': experience, 'Technologies': technologies, 'Function': [job.function?.value, job.subFunction?.value].filter(Boolean).join(' \\u2192 '), 'Company Size': companySize, 'Funding': funding, 'Status': status, 'Source': source, 'Job ID': job.externalId, 'Apply URL': job.originalUrl || '', 'Progress': 'new', 'Applied': '' } });\n}\n\nif (items.length === 0) {\n  items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': '\\u26a0 NO JOBS PROCESSED', 'Job Title': 'All job detail fetches failed', 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Status': 'Error', 'Source': 'hybrid', 'Job ID': '', 'Apply URL': '', 'Progress': '', 'Applied': '' } });\n}\n\nreturn items;"
       },
       "id": "parse-classify",
       "name": "Parse & Classify",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1550, 300]
+      "position": [
+        1550,
+        300
+      ]
     },
     {
       "parameters": {
@@ -165,7 +210,10 @@
       "name": "Read Existing Jobs",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [450, 600],
+      "position": [
+        450,
+        600
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "0pHaLOuQws9nqOt4",
@@ -182,17 +230,23 @@
       "name": "Wait for Both",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.1,
-      "position": [1750, 450]
+      "position": [
+        1750,
+        450
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Dedup using $input.all() \u2014 no cross-branch $('NodeName') references\n// Items from Parse & Classify have _isNew: true, existing sheet rows do not\n// Use String() to handle numeric values from Google Sheets (e.g. USAJobs IDs)\nconst allItems = $input.all();\n\nconst newItems = [];\nconst existingJobIds = new Set();\nconst existingUrls = new Set();\n\n// First pass: separate existing rows from new items\nfor (const item of allItems) {\n  if (item.json._isNew) {\n    newItems.push(item);\n  } else {\n    const jobId = String(item.json['Job ID'] ?? '').trim();\n    const url = String(item.json['URL'] ?? '').trim();\n    if (jobId) existingJobIds.add(jobId);\n    if (url) existingUrls.add(url);\n  }\n}\n\nconsole.log(`Dedup: ${newItems.length} new items, ${existingJobIds.size} existing Job IDs, ${existingUrls.size} existing URLs`);\n\n// Second pass: filter new items against existing + within-batch dedup\nconst output = [];\nlet skippedCount = 0;\nconst batchJobIds = new Set();\n\nfor (const item of newItems) {\n  const jobId = String(item.json['Job ID'] ?? '').trim();\n  const url = String(item.json['URL'] ?? '').trim();\n  const status = item.json['Status'] || '';\n\n  // Always pass through error items\n  if (status === 'AUTH_EXPIRED' || status === 'Error') {\n    const { _isNew, _error, ...rest } = item.json;\n    output.push({ json: rest });\n    continue;\n  }\n\n  // Dedup by Job ID (primary) or URL (fallback)\n  if (jobId && (existingJobIds.has(jobId) || batchJobIds.has(jobId))) { skippedCount++; continue; }\n  if (!jobId && url && existingUrls.has(url)) { skippedCount++; continue; }\n\n  if (jobId) batchJobIds.add(jobId);\n\n  // Remove _isNew marker before appending to sheet\n  const { _isNew, ...rest } = item.json;\n  output.push({ json: rest });\n}\n\nconsole.log(`Dedup: skipped ${skippedCount} duplicate(s), passing ${output.length} new item(s)`);\n\nif (output.length > 0) return output;\n\n// No new jobs \u2014 emit at most one heartbeat row per calendar day\nconst today = new Date().toISOString().split('T')[0];\nconst alreadyHasHeartbeat = allItems.some(item =>\n  !item.json._isNew &&\n  String(item.json['Status'] ?? '') === 'Skip' &&\n  String(item.json['Company'] ?? '') === '\u2713 No new jobs \u2014 WTTJ' &&\n  String(item.json['Date Received'] ?? '').startsWith(today)\n);\n\nif (alreadyHasHeartbeat) return [];\n\nreturn [{\n  json: {\n    'Date Received': today,\n    'Company': '\u2713 No new jobs \u2014 WTTJ',\n    'Job Title': 'Workflow ran \u2014 all recommendations already tracked',\n    'URL': '',\n    'Location': '',\n    'Remote': '',\n    'Salary': '',\n    'Experience': '',\n    'Technologies': '',\n    'Function': '',\n    'Company Size': '',\n    'Funding': '',\n    'Status': 'Skip',\n    'Source': 'hybrid',\n    'Job ID': '',\n    'Apply URL': '',\n    'Progress': '',\n    'Applied': ''\n  }\n}];"
+        "jsCode": "// Dedup using $input.all() — no cross-branch $('NodeName') references\n// Items from Parse & Classify have _isNew: true, existing sheet rows do not\n// Use String() to handle numeric values from Google Sheets (e.g. USAJobs IDs)\nconst allItems = $input.all();\n\nconst newItems = [];\nconst existingJobIds = new Set();\nconst existingUrls = new Set();\n\n// First pass: separate existing rows from new items\nfor (const item of allItems) {\n  if (item.json._isNew) {\n    newItems.push(item);\n  } else {\n    const jobId = String(item.json['Job ID'] ?? '').trim();\n    const url = String(item.json['URL'] ?? '').trim();\n    if (jobId) existingJobIds.add(jobId);\n    if (url) existingUrls.add(url);\n  }\n}\n\nconsole.log(`Dedup: ${newItems.length} new items, ${existingJobIds.size} existing Job IDs, ${existingUrls.size} existing URLs`);\n\n// Second pass: filter new items against existing + within-batch dedup\nconst output = [];\nlet skippedCount = 0;\nconst batchJobIds = new Set();\n\nfor (const item of newItems) {\n  const jobId = String(item.json['Job ID'] ?? '').trim();\n  const url = String(item.json['URL'] ?? '').trim();\n  const status = item.json['Status'] || '';\n\n  // Always pass through error items\n  if (status === 'AUTH_EXPIRED' || status === 'Error') {\n    const { _isNew, _error, ...rest } = item.json;\n    output.push({ json: rest });\n    continue;\n  }\n\n  // Dedup by Job ID (primary) or URL (fallback)\n  if (jobId && (existingJobIds.has(jobId) || batchJobIds.has(jobId))) { skippedCount++; continue; }\n  if (!jobId && url && existingUrls.has(url)) { skippedCount++; continue; }\n\n  if (jobId) batchJobIds.add(jobId);\n\n  // Remove _isNew marker before appending to sheet\n  const { _isNew, ...rest } = item.json;\n  output.push({ json: rest });\n}\n\nconsole.log(`Dedup: skipped ${skippedCount} duplicate(s), passing ${output.length} new item(s)`);\n\nif (output.length > 0) return output;\n\n// No new jobs — emit at most one heartbeat row per calendar day\nconst today = new Date().toISOString().split('T')[0];\nconst alreadyHasHeartbeat = allItems.some(item =>\n  !item.json._isNew &&\n  String(item.json['Status'] ?? '') === 'Skip' &&\n  String(item.json['Company'] ?? '') === '✓ No new jobs — WTTJ' &&\n  String(item.json['Date Received'] ?? '').startsWith(today)\n);\n\nif (alreadyHasHeartbeat) return [];\n\nreturn [{\n  json: {\n    'Date Received': today,\n    'Company': '✓ No new jobs — WTTJ',\n    'Job Title': 'Workflow ran — all recommendations already tracked',\n    'URL': '',\n    'Location': '',\n    'Remote': '',\n    'Salary': '',\n    'Experience': '',\n    'Technologies': '',\n    'Function': '',\n    'Company Size': '',\n    'Funding': '',\n    'Status': 'Skip',\n    'Source': 'hybrid',\n    'Job ID': '',\n    'Apply URL': '',\n    'Progress': '',\n    'Applied': ''\n  }\n}];"
       },
       "id": "filter-duplicates",
       "name": "Filter Duplicates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1950, 450]
+      "position": [
+        1950,
+        450
+      ]
     },
     {
       "parameters": {
@@ -219,11 +273,57 @@
       "name": "Append to WTTJ Job Tracker",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [2150, 450],
+      "position": [
+        2150,
+        450
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "0pHaLOuQws9nqOt4",
           "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json._authExpired }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-auth-expired",
+      "name": "IF Auth Expired",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        950,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "sergey.zabolotnikov@gmail.com",
+        "subject": "⚠ WTTJ session expired — run npm run reauth",
+        "emailType": "text",
+        "message": "Your WTTJ session cookies have expired.\n\nThe job recommendations API returned currentUser: null, so no recommendations are being fetched.\n\nTo fix, run in the WTJ directory:\n\n  npm run reauth\n\nThis opens a browser to refresh the cookies, then restarts n8n automatically.\n\nTimestamp: {{ new Date().toISOString() }}",
+        "options": {}
+      },
+      "id": "send-auth-expired-email",
+      "name": "Send Auth Expired Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1200,
+        600
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "W37w2VUS9ryGJWRq",
+          "name": "Gmail account"
         }
       }
     }
@@ -232,44 +332,166 @@
     "Gmail Trigger - WTTJ Alerts": {
       "main": [
         [
-          { "node": "Get Email Body", "type": "main", "index": 0 },
-          { "node": "Get Recommendations", "type": "main", "index": 0 },
-          { "node": "Read Existing Jobs", "type": "main", "index": 0 }
+          {
+            "node": "Get Email Body",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Recommendations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Existing Jobs",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
     "Get Email Body": {
-      "main": [[ { "node": "Extract Email Job IDs", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Extract Email Job IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Extract Email Job IDs": {
-      "main": [[ { "node": "Merge Job IDs", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Merge Job IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Get Recommendations": {
-      "main": [[ { "node": "Extract Rec IDs", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Extract Rec IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Extract Rec IDs": {
-      "main": [[ { "node": "Merge Job IDs", "type": "main", "index": 1 } ]]
+      "main": [
+        [
+          {
+            "node": "Merge Job IDs",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "IF Auth Expired",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Merge Job IDs": {
-      "main": [[ { "node": "Dedup & Filter", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Dedup & Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Dedup & Filter": {
-      "main": [[ { "node": "Get Job Details", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Get Job Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Get Job Details": {
-      "main": [[ { "node": "Parse & Classify", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Parse & Classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse & Classify": {
-      "main": [[ { "node": "Wait for Both", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Wait for Both",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Read Existing Jobs": {
-      "main": [[ { "node": "Wait for Both", "type": "main", "index": 1 } ]]
+      "main": [
+        [
+          {
+            "node": "Wait for Both",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
     },
     "Wait for Both": {
-      "main": [[ { "node": "Filter Duplicates", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Filter Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Filter Duplicates": {
-      "main": [[ { "node": "Append to WTTJ Job Tracker", "type": "main", "index": 0 } ]]
+      "main": [
+        [
+          {
+            "node": "Append to WTTJ Job Tracker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Auth Expired": {
+      "main": [
+        [
+          {
+            "node": "Send Auth Expired Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Send Auth Expired Email": {
+      "main": [
+        []
+      ]
     }
   },
   "settings": {

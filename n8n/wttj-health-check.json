@@ -1,0 +1,89 @@
+{
+  "name": "WTTJ Health Check (Daily Auth)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "health-schedule",
+      "name": "Every Morning 9am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.exp.welcometothejungle.com/graphql",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Cookie", "value": "={{ $env.WTTJ_COOKIE }}" },
+            { "name": "x-csrf-token", "value": "={{ $env.WTTJ_CSRF_TOKEN }}" },
+            { "name": "origin", "value": "https://app.welcometothejungle.com" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ operationName: 'HealthCheck', variables: {}, query: 'query HealthCheck { currentUser { id } }' }) }}",
+        "options": {}
+      },
+      "id": "health-check-request",
+      "name": "Check WTTJ Auth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const json = $input.first().json;\nconst currentUser = json.data?.currentUser;\nif (currentUser === null || currentUser === undefined) {\n  console.log('Auth expired — sending alert');\n  return [{ json: { expired: true } }];\n}\nconsole.log('Auth valid, currentUser id:', currentUser.id);\nreturn [];"
+      },
+      "id": "health-check-code",
+      "name": "Check If Expired",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "sergey.zabolotnikov@gmail.com",
+        "subject": "⚠ WTTJ session expired — run npm run reauth",
+        "emailType": "text",
+        "message": "Daily health check detected that your WTTJ session cookies have expired.\n\nThe GraphQL query { currentUser { id } } returned null.\n\nTo fix, run in the WTJ directory:\n\n  npm run reauth\n\nThis opens a browser to refresh the cookies, then restarts n8n automatically.\n\nChecked at: {{ new Date().toISOString() }}",
+        "options": {}
+      },
+      "id": "health-send-email",
+      "name": "Send Health Alert Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [950, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "W37w2VUS9ryGJWRq",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Morning 9am": {
+      "main": [[{ "node": "Check WTTJ Auth", "type": "main", "index": 0 }]]
+    },
+    "Check WTTJ Auth": {
+      "main": [[{ "node": "Check If Expired", "type": "main", "index": 0 }]]
+    },
+    "Check If Expired": {
+      "main": [[{ "node": "Send Health Alert Email", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
