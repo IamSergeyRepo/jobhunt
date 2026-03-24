@@ -12,7 +12,10 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [200, 300],
+      "position": [
+        200,
+        300
+      ],
       "webhookId": "apply-helper-id"
     },
     {
@@ -35,7 +38,10 @@
       "name": "Read WTTJ Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [450, 150],
+      "position": [
+        450,
+        150
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "0pHaLOuQws9nqOt4",
@@ -63,7 +69,10 @@
       "name": "Read USAJobs Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [450, 400],
+      "position": [
+        450,
+        400
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "0pHaLOuQws9nqOt4",
@@ -72,22 +81,31 @@
       }
     },
     {
-      "parameters": { "mode": "append", "options": {} },
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
       "id": "merge-sheets",
       "name": "Merge Sheets",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.1,
-      "position": [700, 270]
+      "position": [
+        700,
+        270
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const webhookJson = $('Webhook').first().json;\nconst body = webhookJson.body || webhookJson;\nconst action = body.action;\nconst sourceFilter = body.source || 'all';\n\nif (action !== 'get-pending') return [];\n\nconst allRows = $input.all();\n\nconst pending = allRows.filter(row => {\n  const j = row.json;\n  if (j['Status'] !== 'Relevant') return false;\n  if (j['Progress'] !== 'new' && j['Progress']) return false;\n  if (!j['Apply URL'] || !j['Apply URL'].trim()) return false;\n\n  // Source filtering\n  if (sourceFilter !== 'all') {\n    const rowSource = String(j['Source'] ?? '').toLowerCase();\n    const isUsajobs = rowSource === 'usajobs';\n    if (sourceFilter === 'usajobs' && !isUsajobs) return false;\n    if (sourceFilter === 'wttj' && isUsajobs) return false;\n  }\n  return true;\n});\n\nconst jobs = pending.map(row => {\n  const j = row.json;\n  const rowSource = String(j['Source'] ?? '').toLowerCase();\n  const source = rowSource === 'usajobs' ? 'usajobs' : 'wttj';\n  return {\n    jobId: j['Job ID'] || '',\n    company: j['Company'] || '',\n    jobTitle: j['Job Title'] || '',\n    url: j['URL'] || '',\n    applyUrl: j['Apply URL'] || '',\n    location: j['Location'] || '',\n    salary: j['Salary'] || '',\n    source\n  };\n});\n\nreturn [{ json: { jobs, count: jobs.length } }];"
+        "jsCode": "const webhookJson = $('Webhook').first().json;\nconst body = webhookJson.body || webhookJson;\nconst action = body.action;\nconst sourceFilter = body.source || 'all';\n\nif (action !== 'get-pending') return [];\n\nconst allRows = $input.all();\n\nconst pending = allRows.filter(row => {\n  const j = row.json;\n  // New format: Progress='relevant'\n  // Legacy format (pre-migration): Status='Relevant' + Progress='new'\n  const isRelevant = j['Progress'] === 'relevant' ||\n    (j['Status'] === 'Relevant' && (j['Progress'] === 'new' || !j['Progress']));\n  if (!isRelevant) return false;\n  if (!j['Apply URL'] || !j['Apply URL'].trim()) return false;\n\n  if (sourceFilter !== 'all') {\n    const rowSource = String(j['Source'] ?? '').toLowerCase();\n    const isUsajobs = rowSource === 'usajobs';\n    if (sourceFilter === 'usajobs' && !isUsajobs) return false;\n    if (sourceFilter === 'wttj' && isUsajobs) return false;\n  }\n  return true;\n});\n\nconst jobs = pending.map(row => {\n  const j = row.json;\n  const rowSource = String(j['Source'] ?? '').toLowerCase();\n  const source = rowSource === 'usajobs' ? 'usajobs' : 'wttj';\n  return {\n    jobId: j['Job ID'] || '',\n    company: j['Company'] || '',\n    jobTitle: j['Job Title'] || '',\n    url: j['URL'] || '',\n    applyUrl: j['Apply URL'] || '',\n    location: j['Location'] || '',\n    salary: j['Salary'] || '',\n    source\n  };\n});\n\nreturn [{ json: { jobs, count: jobs.length } }];"
       },
       "id": "filter-pending",
       "name": "Filter Pending",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [950, 270]
+      "position": [
+        950,
+        270
+      ]
     },
     {
       "parameters": {
@@ -101,7 +119,10 @@
       "name": "Respond Pending",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1200, 270]
+      "position": [
+        1200,
+        270
+      ]
     },
     {
       "parameters": {
@@ -111,7 +132,10 @@
       "name": "Prepare Update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [450, 600]
+      "position": [
+        450,
+        600
+      ]
     },
     {
       "parameters": {
@@ -139,7 +163,10 @@
       "name": "If USAJobs",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [700, 600]
+      "position": [
+        700,
+        600
+      ]
     },
     {
       "parameters": {
@@ -162,11 +189,37 @@
             "Progress": "={{ $json['Progress'] }}",
             "Applied": "={{ $json['Applied'] }}"
           },
-          "matchingColumns": ["Job ID"],
+          "matchingColumns": [
+            "Job ID"
+          ],
           "schema": [
-            { "id": "Job ID", "displayName": "Job ID", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Progress", "displayName": "Progress", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
-            { "id": "Applied", "displayName": "Applied", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+            {
+              "id": "Job ID",
+              "displayName": "Job ID",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Progress",
+              "displayName": "Progress",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Applied",
+              "displayName": "Applied",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
           ]
         },
         "options": {}
@@ -175,7 +228,10 @@
       "name": "Update USAJobs Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [950, 500],
+      "position": [
+        950,
+        500
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "0pHaLOuQws9nqOt4",
@@ -204,11 +260,37 @@
             "Progress": "={{ $json['Progress'] }}",
             "Applied": "={{ $json['Applied'] }}"
           },
-          "matchingColumns": ["Job ID"],
+          "matchingColumns": [
+            "Job ID"
+          ],
           "schema": [
-            { "id": "Job ID", "displayName": "Job ID", "required": false, "defaultMatch": true, "display": true, "type": "string", "canBeUsedToMatch": true },
-            { "id": "Progress", "displayName": "Progress", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false },
-            { "id": "Applied", "displayName": "Applied", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": false }
+            {
+              "id": "Job ID",
+              "displayName": "Job ID",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Progress",
+              "displayName": "Progress",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Applied",
+              "displayName": "Applied",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
           ]
         },
         "options": {}
@@ -217,7 +299,10 @@
       "name": "Update WTTJ Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [950, 700],
+      "position": [
+        950,
+        700
+      ],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "0pHaLOuQws9nqOt4",
@@ -237,58 +322,127 @@
       "name": "Respond Update",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1200, 600]
+      "position": [
+        1200,
+        600
+      ]
     }
   ],
   "connections": {
     "Webhook": {
       "main": [
         [
-          { "node": "Read WTTJ Sheet", "type": "main", "index": 0 },
-          { "node": "Read USAJobs Sheet", "type": "main", "index": 0 },
-          { "node": "Prepare Update", "type": "main", "index": 0 }
+          {
+            "node": "Read WTTJ Sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read USAJobs Sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Update",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
     "Read WTTJ Sheet": {
       "main": [
-        [{ "node": "Merge Sheets", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Merge Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Read USAJobs Sheet": {
       "main": [
-        [{ "node": "Merge Sheets", "type": "main", "index": 1 }]
+        [
+          {
+            "node": "Merge Sheets",
+            "type": "main",
+            "index": 1
+          }
+        ]
       ]
     },
     "Merge Sheets": {
       "main": [
-        [{ "node": "Filter Pending", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Filter Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Filter Pending": {
       "main": [
-        [{ "node": "Respond Pending", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Respond Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Prepare Update": {
       "main": [
-        [{ "node": "If USAJobs", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "If USAJobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "If USAJobs": {
       "main": [
-        [{ "node": "Update USAJobs Sheet", "type": "main", "index": 0 }],
-        [{ "node": "Update WTTJ Sheet", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Update USAJobs Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update WTTJ Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Update USAJobs Sheet": {
       "main": [
-        [{ "node": "Respond Update", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Respond Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Update WTTJ Sheet": {
       "main": [
-        [{ "node": "Respond Update", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Respond Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
