@@ -116,19 +116,29 @@
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.source }}",
-              "operation": "equals",
-              "value2": "usajobs"
+              "id": "source-check",
+              "leftValue": "={{ $json.source }}",
+              "rightValue": "usajobs",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "if-source",
       "name": "If USAJobs",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [700, 600]
     },
     {
