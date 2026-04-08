@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "reauth": "node scripts/wttj-reauth.mjs",
+    "reauth-server": "node scripts/reauth-server.mjs",
     "apply": "node scripts/apply-navigator.mjs",
     "apply:wttj": "node scripts/apply-navigator.mjs --source=wttj",
     "apply:usajobs": "node scripts/apply-navigator.mjs --source=usajobs",

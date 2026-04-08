@@ -165,36 +165,118 @@ async function phase1() {
   return status;
 }
 
-// ─── Phase 2: Interactive login ───────────────────────────────────────────────
+// ─── Phase 2: Login (auto-fill if credentials available, else interactive) ────
 
 async function phase2() {
-  log("Phase 2: Opening browser for login...");
-  log("Please log in within 5 minutes. The script will detect when you're done.");
+  const email = process.env.WTTJ_EMAIL;
+  const password = process.env.WTTJ_PASSWORD;
+  // Auto mode: try to click Google OAuth button using the persistent Chrome profile.
+  // Falls back to email/password form if WTTJ_EMAIL + WTTJ_PASSWORD are set.
+  // Falls back to fully manual login if neither is available.
+  const autoMode = process.env.WTTJ_REAUTH_MANUAL !== "1";
 
-  // Use system Chrome + persistent profile to avoid Google's "browser not secure" block
+  if (autoMode) {
+    log("Phase 2: Attempting auto-login (Google OAuth via Chrome profile, or email/password)...");
+  } else {
+    log("Phase 2: Opening browser for manual login (WTTJ_REAUTH_MANUAL=1)...");
+    log("Please log in within 5 minutes. The script will detect when you're done.");
+  }
+
   const userDataDir = join(AUTH_DIR, "chrome-profile");
   const context = await chromium.launchPersistentContext(userDataDir, {
-    headless: false,
+    headless: false, // keep visible — system Chrome avoids bot detection either way
     channel: "chrome",
   });
 
   const page = context.pages()[0] || await context.newPage();
   await page.goto(SIGN_IN_URL, { waitUntil: "domcontentloaded" });
 
-  // Wait for login: poll canary query using live browser cookies
+  // Auto-login mode: try Google OAuth button first, fall back to email/password form
+  if (autoMode) {
+    try {
+      // Short wait for page to settle
+      await page.waitForTimeout(1500);
+
+      // Check if already logged in (redirected away from sign_in)
+      if (!page.url().includes("/sign_in") && !page.url().includes("/sign_up")) {
+        log("Already logged in (no sign-in page shown).");
+      } else {
+        // Attempt 1: click "Sign in with Google" button (most common for this account)
+        const googleBtn = await page.$('[data-provider="google"], a[href*="google"], button:has-text("Google"), a:has-text("Google")');
+        if (googleBtn) {
+          log("Found Google sign-in button — clicking...");
+          await Promise.all([
+            page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {}),
+            googleBtn.click(),
+          ]);
+          // Google may show "Continue as [user]" if Chrome profile is signed in
+          const continueBtn = await page.waitForSelector(
+            '[data-authuser], #submit_approve_access, [data-action="proceed"], button:has-text("Continue"), button:has-text("Allow")',
+            { timeout: 5000 }
+          ).catch(() => null);
+          if (continueBtn) {
+            log("Google consent screen detected — clicking Continue...");
+            await Promise.all([
+              page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {}),
+              continueBtn.click(),
+            ]);
+          } else {
+            log("No Google consent prompt (profile auto-approved or already signed in).");
+          }
+        } else if (email && password) {
+          // Attempt 2: fall back to email/password form
+          log("No Google button found — trying email/password form...");
+          const emailField = await page.$('input[type="email"], input[name="email"]');
+          if (emailField) {
+            await page.fill('input[type="email"], input[name="email"]', email);
+            await page.fill('input[type="password"]', password);
+            await Promise.all([
+              page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {}),
+              page.click('button[type="submit"], form button'),
+            ]);
+            log("Email/password form submitted.");
+          } else {
+            log("Warning: Neither Google button nor email form found. Falling back to manual login.");
+          }
+        } else {
+          log("Warning: No Google button and no WTTJ_EMAIL/PASSWORD set. Manual login required.");
+        }
+      }
+    } catch (err) {
+      log(`Warning: Auto-login encountered an error: ${err.message}`);
+      log("Waiting for manual login as fallback...");
+    }
+  }
+
+  // Poll canary query until authenticated (works for both auto and manual)
   const deadline = Date.now() + LOGIN_TIMEOUT_MS;
   let authenticated = false;
 
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
 
-    // Quick heuristic: skip polling if still on sign_in/sign_up
     const url = page.url();
     if (url.includes("/sign_in") || url.includes("/sign_up")) {
+      if (autoMode) {
+        // If still on sign-in after form submit, auto-fill may have failed
+        // Try once more with explicit field wait
+        try {
+          const emailField = await page.$('input[type="email"], input[name="email"]');
+          if (emailField) {
+            await page.fill('input[type="email"], input[name="email"]', email);
+            await page.fill('input[type="password"]', password);
+            await Promise.all([
+              page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 10000 }).catch(() => {}),
+              page.click('button[type="submit"], form button'),
+            ]);
+          }
+        } catch {
+          // ignore retry errors
+        }
+      }
       continue;
     }
 
-    // Authoritative check: canary query with current browser cookies
     const state = await context.storageState();
     const { cookieHeader, csrfToken } = extractAuth(state);
     if (!cookieHeader) continue;
@@ -209,10 +291,13 @@ async function phase2() {
 
   if (!authenticated) {
     await context.close();
-    throw new Error("Login timed out after 5 minutes.");
+    throw new Error(
+      autoMode
+        ? "Auto-login timed out. Google Chrome profile may need a fresh sign-in. Run: WTTJ_REAUTH_MANUAL=1 npm run reauth"
+        : "Login timed out after 5 minutes."
+    );
   }
 
-  // Navigate to dashboard to ensure all cookies are set
   try {
     await page.goto(DASHBOARD_URL, { waitUntil: "networkidle", timeout: 15000 });
   } catch {
