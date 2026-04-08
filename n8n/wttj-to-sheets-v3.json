@@ -1,5 +1,5 @@
 {
-  "name": "WTTJ Job Alerts → Google Sheets v3 (Hybrid)",
+  "name": "WTTJ Job Alerts \u2192 Google Sheets v3 (Hybrid)",
   "nodes": [
     {
       "parameters": {
@@ -56,7 +56,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract job IDs from WTTJ email by parsing HTML and following SendGrid redirects\nconst data = $input.first()?.json || {};\nconst dateReceived = new Date().toISOString().split('T')[0];\n\nfunction findHtmlPart(parts) {\n  if (!parts || !parts.length) return null;\n  for (const part of parts) {\n    if (part.mimeType === 'text/html' && part.body?.data) return part.body.data;\n    if (part.parts) { const found = findHtmlPart(part.parts); if (found) return found; }\n  }\n  return null;\n}\n\nlet html = '';\nif (data.textHtml) { html = data.textHtml; }\nelse if (data.payload) {\n  const b64 = findHtmlPart(data.payload.parts || []);\n  if (b64) html = Buffer.from(b64, 'base64url').toString('utf8');\n  if (!html && data.payload.body?.data) html = Buffer.from(data.payload.body.data, 'base64url').toString('utf8');\n}\nelse if (data.html) { html = data.html; }\n\nconsole.log(`Gmail output keys: ${Object.keys(data).join(', ')}`);\nconsole.log(`HTML body length: ${html.length}`);\nif (data.payload) {\n  const topParts = (data.payload.parts || []).map(p => p.mimeType);\n  console.log(`Payload mimeType: ${data.payload.mimeType}, parts: [${topParts.join(', ')}]`);\n}\n\nif (!html) { console.log('No HTML body found in email'); return [{ json: { _skip: true } }]; }\n\nconst linkPattern = /<a[^>]+href=\"(https?:\\/\\/[^\"]+)\"[^>]*>/gi;\nconst seenUrls = new Set();\nconst urls = [];\nlet m;\nwhile ((m = linkPattern.exec(html)) !== null) {\n  const url = m[1].replace(/&amp;/g, '&');\n  if (seenUrls.has(url)) continue;\n  const after = html.slice(m.index, m.index + 2000);\n  if (/class=\"greyHover\"/.test(after)) { seenUrls.add(url); urls.push(url); }\n}\n\nif (urls.length === 0) { console.log('No job links found in email HTML'); return [{ json: { _skip: true } }]; }\n\nconsole.log(`Found ${urls.length} job link(s) in email, resolving redirects...`);\n\nconst items = [];\nfor (const url of urls) {\n  try {\n    const res = await fetch(url, { redirect: 'follow' });\n    const finalUrl = res.url;\n    const idMatch = finalUrl.match(/\\/jobs\\/([^/?#]+)/);\n    if (idMatch) { items.push({ json: { _isNew: true, externalId: idMatch[1], source: 'email', dateReceived } }); console.log(`  \\u2192 ${idMatch[1]}`); }\n    else { console.log(`  \\u2192 Could not extract ID from: ${finalUrl}`); }\n  } catch (e) { console.log(`  \\u2192 Error: ${e.message}`); }\n}\n\nreturn items.length > 0 ? items : [{ json: { _skip: true } }];"
+        "jsCode": "// Extract job IDs from WTTJ email by parsing HTML and following SendGrid redirects\n// NOTE: fetch() is not available in n8n's vm2 Code node sandbox — use require('https'/'http') instead\n// Requires NODE_FUNCTION_ALLOW_BUILTIN=https,http in docker-compose.yml environment\nconst https = require('https');\nconst http = require('http');\nconst data = $input.first()?.json || {};\nconst dateReceived = new Date().toISOString().split('T')[0];\n\nfunction findHtmlPart(parts) {\n  if (!parts || !parts.length) return null;\n  for (const part of parts) {\n    if (part.mimeType === 'text/html' && part.body?.data) return part.body.data;\n    if (part.parts) { const found = findHtmlPart(part.parts); if (found) return found; }\n  }\n  return null;\n}\n\nlet html = '';\nif (data.textHtml) { html = data.textHtml; }\nelse if (data.payload) {\n  const b64 = findHtmlPart(data.payload.parts || []);\n  if (b64) html = Buffer.from(b64, 'base64url').toString('utf8');\n  if (!html && data.payload.body?.data) html = Buffer.from(data.payload.body.data, 'base64url').toString('utf8');\n}\nelse if (data.html) { html = data.html; }\n\nconsole.log(`[email] Gmail output keys: ${Object.keys(data).join(', ')}`);\nconsole.log(`[email] HTML body length: ${html.length}`);\nif (data.payload) {\n  const topParts = (data.payload.parts || []).map(p => p.mimeType);\n  console.log(`[email] Payload mimeType: ${data.payload.mimeType}, parts: [${topParts.join(', ')}]`);\n}\n\nif (!html) { console.log('[email] FAIL: No HTML body found in email'); return [{ json: { _skip: true } }]; }\n\nconst greyHoverCount = (html.match(/greyHover/g) || []).length;\nconsole.log(`[email] greyHover occurrences in HTML: ${greyHoverCount}`);\n\nconst linkPattern = /<a[^>]+href=\"(https?:\\/\\/[^\"]+)\"[^>]*>/gi;\nconst seenUrls = new Set();\nconst urls = [];\nlet m;\nwhile ((m = linkPattern.exec(html)) !== null) {\n  const url = m[1].replace(/&amp;/g, '&');\n  if (seenUrls.has(url)) continue;\n  const after = html.slice(m.index, m.index + 2000);\n  if (/class=\"greyHover\"/.test(after)) { seenUrls.add(url); urls.push(url); }\n}\n\nconsole.log(`[email] Job links found (greyHover pattern): ${urls.length}`);\nif (urls.length === 0) { console.log('[email] FAIL: No job links found — greyHover pattern may have changed'); return [{ json: { _skip: true } }]; }\n\nconsole.log(`[email] Resolving ${urls.length} SendGrid redirect(s) via https module...`);\n\nfunction followRedirects(url, maxRedirects) {\n  if (maxRedirects === undefined) maxRedirects = 10;\n  return new Promise(function(resolve, reject) {\n    if (maxRedirects <= 0) { resolve(url); return; }\n    var lib = url.startsWith('https:') ? https : http;\n    var req = lib.get(url, { timeout: 8000 }, function(res) {\n      res.resume(); // discard body — we only need Location header\n      if ([301, 302, 303, 307, 308].indexOf(res.statusCode) !== -1 && res.headers.location) {\n        var next = res.headers.location;\n        if (!next.startsWith('http')) {\n          try { next = new URL(next, url).href; } catch(e) { resolve(url); return; }\n        }\n        followRedirects(next, maxRedirects - 1).then(resolve).catch(reject);\n      } else {\n        resolve(url);\n      }\n    });\n    req.on('error', reject);\n    req.on('timeout', function() { req.destroy(); reject(new Error('request timeout')); });\n  });\n}\n\nconst items = [];\nfor (const url of urls) {\n  console.log(`[email] Fetching: ${url.slice(0, 80)}...`);\n  try {\n    const finalUrl = await followRedirects(url);\n    console.log(`[email] Final URL: ${finalUrl.slice(0, 100)}`);\n    const idMatch = finalUrl.match(/\\/jobs\\/([^/?#]+)/);\n    if (idMatch) {\n      items.push({ json: { _isNew: true, externalId: idMatch[1], source: 'email', dateReceived } });\n      console.log(`[email] \\u2192 Extracted job ID: ${idMatch[1]}`);\n    } else {\n      console.log(`[email] WARN: Could not extract /jobs/ID from final URL: ${finalUrl}`);\n    }\n  } catch (e) {\n    console.log(`[email] ERROR following redirect: ${e.message}`);\n  }\n}\n\nconsole.log(`[email] Total email job IDs extracted: ${items.length}`);\nreturn items.length > 0 ? items : [{ json: { _skip: true } }];"
       },
       "id": "extract-email-ids",
       "name": "Extract Email Job IDs",
@@ -149,14 +149,6 @@
         "headerParameters": {
           "parameters": [
             {
-              "name": "Cookie",
-              "value": "={{ $env.WTTJ_COOKIE }}"
-            },
-            {
-              "name": "x-csrf-token",
-              "value": "={{ $env.WTTJ_CSRF_TOKEN }}"
-            },
-            {
               "name": "origin",
               "value": "https://app.welcometothejungle.com"
             }
@@ -165,20 +157,27 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ operationName: 'JobDetails', variables: { externalId: $json.externalId, currency: 'USD' }, query: 'query JobDetails($externalId: ID!, $currency: Currency!) { publicJob(externalId: $externalId) { id externalId title subtitle salaryRange { minAmount maxAmount currency } remoteOnly formattedLocationPreferences(groupRemote: true) { name matchesUserPreference } function { value } subFunction { value } minYearsExperienceRequired maxYearsExperienceRequired technologiesUsed { value } originalUrl insertedAt validUntil company { name shortDescription numberEmployees size { value } sectorTags { value } totalFunding(currency: $currency) { amount currency } } } }' }) }}",
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "get-job-details",
-      "name": "Get Job Details",
+      "name": "Get Job Details (public)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
         1350,
         300
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "// Parse job details and classify — adds _isNew marker for dedup\nconst DMV_KEYWORDS = ['washington', 'dc', 'd.c.', 'district of columbia', 'maryland', 'virginia', 'arlington', 'alexandria', 'fairfax', 'reston', 'tysons', 'mclean', 'herndon', 'sterling', 'ashburn', 'leesburg', 'bethesda', 'rockville', 'silver spring', 'college park', 'columbia', 'baltimore', 'annapolis', 'dmv'];\nconst REMOTE_KEYWORDS = ['remote', 'full remote', 'full-remote', 'fully remote', 'work from home', 'wfh', 'anywhere', 'distributed'];\n\nfunction classifyLocation(locationStr, isRemote) {\n  if (isRemote) return 'relevant';\n  if (!locationStr) return 'skip';\n  const loc = locationStr.toLowerCase();\n  for (const kw of REMOTE_KEYWORDS) { if (loc.includes(kw)) return 'relevant'; }\n  for (const kw of DMV_KEYWORDS) { if (loc.includes(kw)) return 'relevant'; }\n  return 'skip';\n}\n\nconst items = [];\nconst dateReceived = new Date().toISOString().split('T')[0];\nconst dedupItems = $('Dedup & Filter').all();\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const dedupItem = dedupItems[i]?.json || {};\n\n  if (dedupItem._error) {\n    const { _error, _isNew, externalId, ...rest } = dedupItem;\n    items.push({ json: { _isNew: true, ...rest, 'Job ID': '', 'Apply URL': '', 'Progress': 'error', 'Applied': '' } });\n    continue;\n  }\n\n  const json = $input.all()[i].json;\n  const job = json.data?.publicJob;\n\n  if (!job) {\n    const errorMsg = json.errors ? json.errors.map(e => e.message).join('; ') : 'Job not found';\n    items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': dedupItem.company || '\\u26a0 FETCH ERROR', 'Job Title': dedupItem.title || errorMsg, 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Progress': 'error', 'Source': dedupItem.source || 'hybrid', 'Job ID': '', 'Apply URL': '', 'Applied': '' } });\n    continue;\n  }\n\n  let salary = '';\n  if (job.salaryRange) {\n    const { minAmount, maxAmount, currency } = job.salaryRange;\n    const fmt = (n) => { const num = parseInt(n); return num >= 1000 ? `${Math.round(num / 1000)}K` : num; };\n    if (minAmount && maxAmount) salary = `${currency} ${fmt(minAmount)}\\u2013${fmt(maxAmount)}`;\n    else if (minAmount) salary = `${currency} ${fmt(minAmount)}+`;\n    else if (maxAmount) salary = `Up to ${currency} ${fmt(maxAmount)}`;\n  }\n\n  const locations = (job.formattedLocationPreferences || []).map(l => l.name).join(', ');\n  let experience = '';\n  if (job.minYearsExperienceRequired != null && job.maxYearsExperienceRequired != null) experience = `${job.minYearsExperienceRequired}\\u2013${job.maxYearsExperienceRequired} years`;\n  else if (job.minYearsExperienceRequired != null) experience = `${job.minYearsExperienceRequired}+ years`;\n  else if (job.maxYearsExperienceRequired != null) experience = `Up to ${job.maxYearsExperienceRequired} years`;\n\n  const technologies = (job.technologiesUsed || []).map(t => t.value).join(', ');\n  const co = job.company || {};\n  const companySize = co.size?.value || '';\n  const funding = co.totalFunding ? `${co.totalFunding.currency} ${Math.round(parseInt(co.totalFunding.amount) / 1000000)}M` : '';\n  const remote = job.remoteOnly ? 'Yes' : 'No';\n  const progress = classifyLocation(locations, job.remoteOnly);\n  const url = `https://app.welcometothejungle.com/jobs/${job.externalId}`;\n  const source = dedupItem.source || 'hybrid';\n\n  items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': co.name || '', 'Job Title': job.title || '', 'URL': url, 'Location': locations, 'Remote': remote, 'Salary': salary, 'Experience': experience, 'Technologies': technologies, 'Function': [job.function?.value, job.subFunction?.value].filter(Boolean).join(' \\u2192 '), 'Company Size': companySize, 'Funding': funding, 'Progress': progress, 'Source': source, 'Job ID': job.externalId, 'Apply URL': job.originalUrl || '', 'Applied': '' } });\n}\n\nif (items.length === 0) {\n  items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': '\\u26a0 NO JOBS PROCESSED', 'Job Title': 'All job detail fetches failed', 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Progress': 'error', 'Source': 'hybrid', 'Job ID': '', 'Apply URL': '', 'Applied': '' } });\n}\n\nreturn items;"
+        "jsCode": "// Parse job details and classify \u2014 adds _isNew marker for dedup\nconst DMV_KEYWORDS = ['washington', 'dc', 'd.c.', 'district of columbia', 'maryland', 'virginia', 'arlington', 'alexandria', 'fairfax', 'reston', 'tysons', 'mclean', 'herndon', 'sterling', 'ashburn', 'leesburg', 'bethesda', 'rockville', 'silver spring', 'college park', 'columbia', 'baltimore', 'annapolis', 'dmv'];\nconst REMOTE_KEYWORDS = ['remote', 'full remote', 'full-remote', 'fully remote', 'work from home', 'wfh', 'anywhere', 'distributed'];\n\nfunction classifyLocation(locationStr, isRemote) {\n  if (isRemote) return 'Relevant';\n  if (!locationStr) return 'Skip';\n  const loc = locationStr.toLowerCase();\n  for (const kw of REMOTE_KEYWORDS) { if (loc.includes(kw)) return 'Relevant'; }\n  for (const kw of DMV_KEYWORDS) { if (loc.includes(kw)) return 'Relevant'; }\n  return 'Skip';\n}\n\nconst items = [];\nconst dateReceived = new Date().toISOString().split('T')[0];\nconst dedupItems = $('Dedup & Filter').all();\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const dedupItem = dedupItems[i]?.json || {};\n\n  if (dedupItem._error) {\n    const { _error, _isNew, externalId, ...rest } = dedupItem;\n    items.push({ json: { _isNew: true, ...rest, 'Job ID': '', 'Apply URL': '', 'Status': 'Error', 'Progress': 'error', 'Applied': '' } });\n    continue;\n  }\n\n  const json = $input.all()[i].json;\n  const job = json.data?.publicJob;\n\n  if (!job) {\n    const errorMsg = json.errors ? json.errors.map(e => e.message).join('; ') : 'Job not found';\n    items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': dedupItem.company || '\\u26a0 FETCH ERROR', 'Job Title': dedupItem.title || errorMsg, 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Status': 'Error', 'Progress': 'error', 'Source': dedupItem.source || 'hybrid', 'Job ID': '', 'Apply URL': '', 'Applied': '' } });\n    continue;\n  }\n\n  let salary = '';\n  if (job.salaryRange) {\n    const { minAmount, maxAmount, currency } = job.salaryRange;\n    const fmt = (n) => { const num = parseInt(n); return num >= 1000 ? `${Math.round(num / 1000)}K` : num; };\n    if (minAmount && maxAmount) salary = `${currency} ${fmt(minAmount)}\\u2013${fmt(maxAmount)}`;\n    else if (minAmount) salary = `${currency} ${fmt(minAmount)}+`;\n    else if (maxAmount) salary = `Up to ${currency} ${fmt(maxAmount)}`;\n  }\n\n  const locations = (job.formattedLocationPreferences || []).map(l => l.name).join(', ');\n  let experience = '';\n  if (job.minYearsExperienceRequired != null && job.maxYearsExperienceRequired != null) experience = `${job.minYearsExperienceRequired}\\u2013${job.maxYearsExperienceRequired} years`;\n  else if (job.minYearsExperienceRequired != null) experience = `${job.minYearsExperienceRequired}+ years`;\n  else if (job.maxYearsExperienceRequired != null) experience = `Up to ${job.maxYearsExperienceRequired} years`;\n\n  const technologies = (job.technologiesUsed || []).map(t => t.value).join(', ');\n  const co = job.company || {};\n  const companySize = co.size?.value || '';\n  const funding = co.totalFunding ? `${co.totalFunding.currency} ${Math.round(parseInt(co.totalFunding.amount) / 1000000)}M` : '';\n  const remote = job.remoteOnly ? 'Yes' : 'No';\n  const status = classifyLocation(locations, job.remoteOnly);\n  const url = `https://app.welcometothejungle.com/jobs/${job.externalId}`;\n  const source = dedupItem.source || 'hybrid';\n\n  items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': co.name || '', 'Job Title': job.title || '', 'URL': url, 'Location': locations, 'Remote': remote, 'Salary': salary, 'Experience': experience, 'Technologies': technologies, 'Function': [job.function?.value, job.subFunction?.value].filter(Boolean).join(' \\u2192 '), 'Company Size': companySize, 'Funding': funding, 'Status': status, 'Progress': 'new', 'Source': source, 'Job ID': job.externalId, 'Apply URL': job.originalUrl || '', 'Applied': '' } });\n}\n\nif (items.length === 0) {\n  items.push({ json: { _isNew: true, 'Date Received': dateReceived, 'Company': '\\u26a0 NO JOBS PROCESSED', 'Job Title': 'All job detail fetches failed', 'URL': '', 'Location': '', 'Remote': '', 'Salary': '', 'Experience': '', 'Technologies': '', 'Function': '', 'Company Size': '', 'Funding': '', 'Status': 'Error', 'Progress': 'error', 'Source': 'hybrid', 'Job ID': '', 'Apply URL': '', 'Applied': '' } });\n}\n\nreturn items;"
       },
       "id": "parse-classify",
       "name": "Parse & Classify",
@@ -237,7 +236,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Dedup using $input.all() — no cross-branch $('NodeName') references\n// Items from Parse & Classify have _isNew: true, existing sheet rows do not\nconst allItems = $input.all();\n\nconst newItems = [];\nconst existingJobIds = new Set();\nconst existingUrls = new Set();\n\nfor (const item of allItems) {\n  if (item.json._isNew) {\n    newItems.push(item);\n  } else {\n    const jobId = String(item.json['Job ID'] ?? '').trim();\n    const url = String(item.json['URL'] ?? '').trim();\n    if (jobId) existingJobIds.add(jobId);\n    if (url) existingUrls.add(url);\n  }\n}\n\nconsole.log(`Dedup: ${newItems.length} new items, ${existingJobIds.size} existing Job IDs, ${existingUrls.size} existing URLs`);\n\nconst output = [];\nlet skippedCount = 0;\nconst batchJobIds = new Set();\n\nfor (const item of newItems) {\n  const jobId = String(item.json['Job ID'] ?? '').trim();\n  const url = String(item.json['URL'] ?? '').trim();\n  const progress = item.json['Progress'] || '';\n\n  // Always pass through error items\n  if (progress === 'AUTH_EXPIRED' || progress === 'error') {\n    const { _isNew, _error, ...rest } = item.json;\n    output.push({ json: rest });\n    continue;\n  }\n\n  // Dedup by Job ID (primary) or URL (fallback)\n  if (jobId && (existingJobIds.has(jobId) || batchJobIds.has(jobId))) { skippedCount++; continue; }\n  if (!jobId && url && existingUrls.has(url)) { skippedCount++; continue; }\n\n  if (jobId) batchJobIds.add(jobId);\n\n  const { _isNew, ...rest } = item.json;\n  output.push({ json: rest });\n}\n\nconsole.log(`Dedup: skipped ${skippedCount} duplicate(s), passing ${output.length} new item(s)`);\n\nif (output.length > 0) return output;\n\n// No new jobs — emit at most one heartbeat row per calendar day\nconst today = new Date().toISOString().split('T')[0];\nconst alreadyHasHeartbeat = allItems.some(item =>\n  !item.json._isNew &&\n  String(item.json['Progress'] ?? '') === 'skip' &&\n  String(item.json['Company'] ?? '') === '\\u2713 No new jobs \\u2014 WTTJ' &&\n  String(item.json['Date Received'] ?? '').startsWith(today)\n);\n\nif (alreadyHasHeartbeat) return [];\n\nreturn [{\n  json: {\n    'Date Received': today,\n    'Company': '\\u2713 No new jobs \\u2014 WTTJ',\n    'Job Title': 'Workflow ran \\u2014 all recommendations already tracked',\n    'URL': '', 'Location': '', 'Remote': '', 'Salary': '',\n    'Experience': '', 'Technologies': '', 'Function': '',\n    'Company Size': '', 'Funding': '',\n    'Progress': 'skip', 'Source': 'hybrid',\n    'Job ID': '', 'Apply URL': '', 'Applied': ''\n  }\n}];"
+        "jsCode": "// Dedup using $input.all() \u2014 no cross-branch $('NodeName') references\n// Items from Parse & Classify have _isNew: true, existing sheet rows do not\nconst allItems = $input.all();\n\nconst newItems = [];\nconst existingJobIds = new Set();\nconst existingUrls = new Set();\n\nfor (const item of allItems) {\n  if (item.json._isNew) {\n    newItems.push(item);\n  } else {\n    const jobId = String(item.json['Job ID'] ?? '').trim();\n    const url = String(item.json['URL'] ?? '').trim();\n    if (jobId) existingJobIds.add(jobId);\n    if (url) existingUrls.add(url);\n  }\n}\n\nconsole.log(`Dedup: ${newItems.length} new items, ${existingJobIds.size} existing Job IDs, ${existingUrls.size} existing URLs`);\n\nconst output = [];\nlet skippedCount = 0;\nconst batchJobIds = new Set();\n\nfor (const item of newItems) {\n  const jobId = String(item.json['Job ID'] ?? '').trim();\n  const url = String(item.json['URL'] ?? '').trim();\n  const progress = item.json['Progress'] || '';\n\n  // Always pass through error items\n  if (progress === 'AUTH_EXPIRED' || progress === 'error') {\n    const { _isNew, _error, ...rest } = item.json;\n    output.push({ json: rest });\n    continue;\n  }\n\n  // Dedup by Job ID (primary) or URL (fallback)\n  if (jobId && (existingJobIds.has(jobId) || batchJobIds.has(jobId))) { skippedCount++; continue; }\n  if (!jobId && url && existingUrls.has(url)) { skippedCount++; continue; }\n\n  if (jobId) batchJobIds.add(jobId);\n\n  const { _isNew, ...rest } = item.json;\n  output.push({ json: rest });\n}\n\nconsole.log(`Dedup: skipped ${skippedCount} duplicate(s), passing ${output.length} new item(s)`);\n\nif (output.length > 0) return output;\n\n// No new jobs \u2014 emit at most one heartbeat row per calendar day\nconst today = new Date().toISOString().split('T')[0];\nconst alreadyHasHeartbeat = allItems.some(item =>\n  !item.json._isNew &&\n  String(item.json['Progress'] ?? '') === 'skip' &&\n  String(item.json['Company'] ?? '') === '\\u2713 No new jobs \\u2014 WTTJ' &&\n  String(item.json['Date Received'] ?? '').startsWith(today)\n);\n\nif (alreadyHasHeartbeat) return [];\n\nreturn [{\n  json: {\n    'Date Received': today,\n    'Company': '\\u2713 No new jobs \\u2014 WTTJ',\n    'Job Title': 'Workflow ran \\u2014 all recommendations already tracked',\n    'URL': '', 'Location': '', 'Remote': '', 'Salary': '',\n    'Experience': '', 'Technologies': '', 'Function': '',\n    'Company Size': '', 'Funding': '',\n    'Status': 'Skip', 'Progress': 'skip', 'Source': 'hybrid',\n    'Job ID': '', 'Apply URL': '', 'Applied': ''\n  }\n}];"
       },
       "id": "filter-duplicates",
       "name": "Filter Duplicates",
@@ -287,18 +286,29 @@
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json._authExpired }}",
-              "value2": true
+              "id": "auth-expired-check",
+              "leftValue": "={{ $json._authExpired }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "id": "if-auth-expired",
       "name": "IF Auth Expired",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         950,
         600
@@ -306,10 +316,54 @@
     },
     {
       "parameters": {
+        "jsCode": "// Rate-limit reauth triggers to once per 2 hours using workflow static data\nconst data = $getWorkflowStaticData('global');\nconst last = data.lastReauthTriggeredAt || 0;\nconst TWO_HOURS = 2 * 60 * 60 * 1000;\nconst now = Date.now();\n\nif (now - last < TWO_HOURS) {\n  const minLeft = Math.round((TWO_HOURS - (now - last)) / 60000);\n  console.log(`Reauth already triggered ${Math.round((now - last) / 60000)}m ago — cooldown active (${minLeft}m remaining)`);\n  return [];\n}\n\ndata.lastReauthTriggeredAt = now;\nconsole.log('Reauth cooldown OK — triggering reauth and alert');\nreturn [{ json: { trigger: true, timestamp: new Date().toISOString() } }];"
+      },
+      "id": "reauth-cooldown",
+      "name": "Reauth Cooldown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:{{ $env.REAUTH_PORT || '3001' }}/reauth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.REAUTH_SECRET }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 5000
+        }
+      },
+      "id": "trigger-reauth",
+      "name": "Trigger Reauth",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1450,
+        520
+      ]
+    },
+    {
+      "parameters": {
         "sendTo": "sergey.zabolotnikov@gmail.com",
-        "subject": "⚠ WTTJ session expired — run npm run reauth",
+        "subject": "\u26a0 WTTJ session expired \u2014 auto-reauth triggered",
         "emailType": "text",
-        "message": "Your WTTJ session cookies have expired.\n\nThe job recommendations API returned currentUser: null, so no recommendations are being fetched.\n\nTo fix, run in the WTJ directory:\n\n  npm run reauth\n\nThis opens a browser to refresh the cookies, then restarts n8n automatically.\n\nTimestamp: {{ new Date().toISOString() }}",
+        "message": "Your WTTJ session cookies have expired.\n\nAuto-reauth has been triggered — a browser window will open on your machine, auto-fill your credentials, and restart n8n. This takes ~30 seconds.\n\nIf auto-reauth fails (WTTJ_EMAIL/WTTJ_PASSWORD not set, or reauth-server not running), run manually:\n\n  npm run reauth\n\nTimestamp: {{ new Date().toISOString() }}",
         "options": {}
       },
       "id": "send-auth-expired-email",
@@ -317,8 +371,8 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
       "position": [
-        1200,
-        600
+        1450,
+        680
       ],
       "credentials": {
         "gmailOAuth2": {
@@ -414,14 +468,14 @@
       "main": [
         [
           {
-            "node": "Get Job Details",
+            "node": "Get Job Details (public)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Get Job Details": {
+    "Get Job Details (public)": {
       "main": [
         [
           {
@@ -480,11 +534,32 @@
       "main": [
         [
           {
-            "node": "Send Auth Expired Email",
+            "node": "Reauth Cooldown",
             "type": "main",
             "index": 0
           }
         ],
+        []
+      ]
+    },
+    "Reauth Cooldown": {
+      "main": [
+        [
+          {
+            "node": "Trigger Reauth",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Auth Expired Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Reauth": {
+      "main": [
         []
       ]
     },
