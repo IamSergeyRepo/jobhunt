@@ -161,6 +161,14 @@ npm run reauth
 
 Opens Chrome to refresh WTTJ session cookies when they expire.
 
+To run the reauth webhook server (called automatically by n8n when auth expires):
+
+```bash
+npm run reauth-server
+```
+
+Starts an HTTP server on port 3001 that accepts `POST /reauth` from n8n (via `host.docker.internal`), protected by `REAUTH_SECRET` in `.env`.
+
 ## Supported ATS Platforms
 
 | Platform | Auto-fill | Notes |
@@ -194,6 +202,11 @@ docker compose run --rm -T n8n-mcp
 | `scripts/ats/usajobs.mjs` | USAJobs application handler |
 | `scripts/ats/utils.mjs` | Shared form-filling helpers |
 | `scripts/wttj-reauth.mjs` | WTTJ session re-authentication |
+| `scripts/reauth-server.mjs` | Webhook server (host-side) — receives n8n auth-expired trigger, runs reauth |
+| `scripts/fetch-glorify-emails.mjs` | Download job alert emails via Microsoft Graph API (Outlook) |
+| `scripts/gmail-unsubscribe.mjs` | Playwright-based bulk unsubscriber for Gmail senders |
+| `scripts/parse-har.mjs` | One-off: extract WTTJ job IDs from browser HAR file |
+| `scripts/parse-threads-comments.mjs` | One-off: extract comments from Threads/Instagram HAR file |
 | `docker-compose.yml` | n8n + MCP server |
 | `package.json` | Node.js scripts and dependencies |
 
